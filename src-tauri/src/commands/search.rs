@@ -1,9 +1,8 @@
-use crate::models::{SearchRequest, SearchResponse, IndexStatus};
+use crate::config::settings::load_config;
+use crate::logger::app_log;
+use crate::models::{IndexStatus, SearchRequest, SearchResponse};
 use crate::search::engine::SearchEngine;
 use std::sync::{Arc, Mutex};
-use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
 use tauri::State;
 
 pub struct AppState {
@@ -12,27 +11,20 @@ pub struct AppState {
     pub scanned_files: Arc<Mutex<usize>>,
 }
 
-fn app_log(msg: &str) {
-    let app_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("本机快搜");
-    fs::create_dir_all(&app_dir).ok();
-    let path = app_dir.join("app.log");
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .unwrap_or_else(|_| panic!("无法打开日志文件: {:?}", path));
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-    writeln!(file, "[{}] {}", timestamp, msg).ok();
-}
-
 #[tauri::command]
-pub fn search(request: SearchRequest, state: State<AppState>) -> SearchResponse {
-    app_log(&format!("收到搜索请求: query={}, sort_by={:?}, asc={}", request.query, request.sort_by, request.sort_asc));
+pub fn search(mut request: SearchRequest, state: State<AppState>) -> SearchResponse {
+    // 结果数上限由配置控制
+    let max_results = load_config().max_results;
+    if max_results > 0 && request.limit > max_results {
+        request.limit = max_results;
+    }
+
     let engine = state.engine.lock().unwrap();
     let response = engine.search(&request);
-    app_log(&format!("搜索完成: total={}, query_time_ms={}", response.total, response.query_time_ms));
+    app_log(&format!(
+        "搜索完成: query={}, total={}, query_time_ms={}",
+        request.query, response.total, response.query_time_ms
+    ));
     response
 }
 
@@ -40,26 +32,8 @@ pub fn search(request: SearchRequest, state: State<AppState>) -> SearchResponse 
 pub fn get_index_status(state: State<AppState>) -> IndexStatus {
     let is_scanning = *state.is_scanning.lock().unwrap();
     let scanned_files = *state.scanned_files.lock().unwrap();
-    let engine = state.engine.lock().unwrap();
-    let index_count = engine.get_index_count();
-    
-    // 直接写入单独的诊断文件
-    let diag_path = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("本机快搜")
-        .join("cmd_diag.log");
-    fs::create_dir_all(diag_path.parent().unwrap()).ok();
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&diag_path)
-        .unwrap();
-    writeln!(file, "[{}] get_index_status: is_scanning={}, scanned_files={}, index_count={}", 
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
-        is_scanning, scanned_files, index_count).ok();
-    
-    app_log(&format!("get_index_status: is_scanning={}, scanned_files={}, index_count={}", is_scanning, scanned_files, index_count));
-    
+    let index_count = state.engine.lock().unwrap().get_index_count();
+
     IndexStatus {
         is_scanning,
         scanned_files,

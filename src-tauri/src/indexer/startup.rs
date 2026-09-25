@@ -1,40 +1,21 @@
 use crate::indexer::cache::IndexCache;
 use crate::indexer::mft_scanner::scan_all_volumes;
 use crate::indexer::VolumeInfo;
-use crate::models::FileEntry;
+use crate::logger::{app_data_dir, app_log};
+use crate::models::{AppConfig, FileEntry};
 use crate::search::engine::SearchEngine;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-fn app_log(msg: &str) {
-    let app_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("本机快搜");
-    fs::create_dir_all(&app_dir).ok();
-    let path = app_dir.join("app.log");
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .unwrap_or_else(|_| panic!("无法打开日志文件: {:?}", path));
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-    writeln!(file, "[{}] {}", timestamp, msg).ok();
-}
 
 const CACHE_FILE: &str = "file_index.db";
 const CACHE_EXPIRY_HOURS: u64 = 24;
 
 /// 获取缓存文件路径
 fn get_cache_path() -> PathBuf {
-    let app_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("本机快搜");
-    fs::create_dir_all(&app_dir).ok();
-    app_dir.join(CACHE_FILE)
+    app_data_dir().join(CACHE_FILE)
 }
 
 /// 检查缓存是否有效
@@ -102,7 +83,7 @@ fn save_cache(entries: &[FileEntry]) {
 
 /// 启动流程：优先加载缓存让窗口立即显示，需要时后台刷新
 /// 返回 (索引条目, 是否正在后台刷新)
-pub fn load_or_scan(_volumes: &[VolumeInfo], _excludes: &[String]) -> (Vec<FileEntry>, bool) {
+pub fn load_or_scan() -> (Vec<FileEntry>, bool) {
     let cache_path = get_cache_path();
     app_log(&format!("缓存路径: {:?}", cache_path));
 
@@ -119,20 +100,19 @@ pub fn load_or_scan(_volumes: &[VolumeInfo], _excludes: &[String]) -> (Vec<FileE
     }
 
     // 缓存过期或为空，需要后台刷新
-    let needs_refresh = true;
     if entries.is_empty() {
         app_log("缓存为空，将执行后台全量扫描");
     } else {
         app_log("缓存已过期，将在后台刷新索引");
     }
 
-    (entries, needs_refresh)
+    (entries, true)
 }
 
 /// 后台扫描并更新搜索引擎
 pub fn start_background_scan(
     volumes: Vec<VolumeInfo>,
-    excludes: Vec<String>,
+    config: AppConfig,
     engine: Arc<Mutex<SearchEngine>>,
     scanned_files: Arc<Mutex<usize>>,
     is_scanning: Arc<Mutex<bool>>,
@@ -141,7 +121,7 @@ pub fn start_background_scan(
         app_log("后台扫描线程启动");
         *is_scanning.lock().unwrap() = true;
 
-        let entries = scan_all_volumes(&volumes, &excludes);
+        let entries = scan_all_volumes(&volumes, &config);
         let count = entries.len();
         app_log(&format!("后台扫描完成：{} 个文件", count));
 
@@ -157,8 +137,8 @@ pub fn start_background_scan(
     });
 }
 
-/// 强制重新扫描（同步执行，会阻塞调用者）
-pub fn force_rescan(volumes: &[VolumeInfo], excludes: &[String]) -> Vec<FileEntry> {
+/// 强制重新扫描：删除旧缓存并全量重建（同步执行，会阻塞调用者）
+pub fn force_rescan(volumes: &[VolumeInfo], config: &AppConfig) -> Vec<FileEntry> {
     let cache_path = get_cache_path();
 
     // 删除旧缓存
@@ -167,7 +147,7 @@ pub fn force_rescan(volumes: &[VolumeInfo], excludes: &[String]) -> Vec<FileEntr
     }
 
     // 执行全量扫描
-    let entries = scan_all_volumes(volumes, excludes);
+    let entries = scan_all_volumes(volumes, config);
 
     // 保存新缓存
     save_cache(&entries);

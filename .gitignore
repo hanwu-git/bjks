@@ -1,6 +1,8 @@
 # Rust
 target/
-Cargo.lock
+
+# Tauri 自动生成的 schema
+src-tauri/gen/schemas/
 
 # Node
 node_modules/

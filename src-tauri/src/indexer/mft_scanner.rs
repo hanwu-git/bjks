@@ -1,29 +1,75 @@
-use crate::models::FileEntry;
 use crate::indexer::VolumeInfo;
-use walkdir::WalkDir;
-use std::path::Path;
+use crate::models::{AppConfig, FileEntry};
+use glob::Pattern;
 use rayon::prelude::*;
+use walkdir::{DirEntry, WalkDir};
 
-/// 检查路径是否应该被排除
-fn is_excluded(path: &Path, excludes: &[String]) -> bool {
-    let path_str = path.to_string_lossy().to_lowercase();
-    for exclude in excludes {
-        let exclude_lower = exclude.to_lowercase();
-        if path_str.contains(&exclude_lower) {
-            return true;
-        }
-    }
-    false
+/// 扫描排除规则：目录路径、文件名通配模式、扩展名
+struct ScanFilter {
+    paths: Vec<String>,
+    patterns: Vec<Pattern>,
+    extensions: Vec<String>,
 }
 
-/// 快速扫描指定卷（MVP 版本使用 walkdir）
-pub fn scan_volume_fast(root: &str, excludes: &[String]) -> Vec<FileEntry> {
+impl ScanFilter {
+    fn from_config(config: &AppConfig) -> Self {
+        Self {
+            paths: config
+                .excluded_paths
+                .iter()
+                .map(|p| p.to_lowercase())
+                .collect(),
+            patterns: config
+                .excluded_file_patterns
+                .iter()
+                .filter_map(|p| Pattern::new(&p.to_lowercase()).ok())
+                .collect(),
+            extensions: config
+                .excluded_extensions
+                .iter()
+                .map(|e| e.trim_start_matches('.').to_lowercase())
+                .filter(|e| !e.is_empty())
+                .collect(),
+        }
+    }
+
+    fn is_excluded(&self, entry: &DirEntry) -> bool {
+        let path = entry.path();
+
+        let path_str = path.to_string_lossy().to_lowercase();
+        if self.paths.iter().any(|p| path_str.contains(p.as_str())) {
+            return true;
+        }
+
+        if let Some(name) = entry.file_name().to_str() {
+            let name_lower = name.to_lowercase();
+            if self.patterns.iter().any(|p| p.matches(&name_lower)) {
+                return true;
+            }
+        }
+
+        if !entry.file_type().is_dir() {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                let ext_lower = ext.to_lowercase();
+                if self.extensions.iter().any(|e| e == &ext_lower) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+}
+
+/// 扫描指定卷（使用 walkdir 遍历）
+pub fn scan_volume_fast(root: &str, config: &AppConfig) -> Vec<FileEntry> {
+    let filter = ScanFilter::from_config(config);
     let mut entries = Vec::new();
     let mut id_counter: u64 = 0;
-    
+
     for entry in WalkDir::new(root)
         .into_iter()
-        .filter_entry(|e| !is_excluded(e.path(), excludes))
+        .filter_entry(|e| !filter.is_excluded(e))
         .filter_map(|e| e.ok())
     {
         let metadata = entry.metadata().ok();
@@ -53,11 +99,11 @@ pub fn scan_volume_fast(root: &str, excludes: &[String]) -> Vec<FileEntry> {
 }
 
 /// 并行扫描多个卷
-pub fn scan_all_volumes(volumes: &[VolumeInfo], excludes: &[String]) -> Vec<FileEntry> {
+pub fn scan_all_volumes(volumes: &[VolumeInfo], config: &AppConfig) -> Vec<FileEntry> {
     volumes
         .par_iter()
         .flat_map(|vol| {
-            let mut entries = scan_volume_fast(&vol.drive_letter, excludes);
+            let mut entries = scan_volume_fast(&vol.drive_letter, config);
             // 重新分配 ID 以确保全局唯一性
             let start_id = entries.first().map(|e| e.id).unwrap_or(0);
             for (idx, entry) in entries.iter_mut().enumerate() {
@@ -75,9 +121,9 @@ mod tests {
     #[test]
     fn test_scan_subdirectory() {
         // 扫描当前目录作为测试
-        let entries = scan_volume_fast(".", &[]);
+        let entries = scan_volume_fast(".", &AppConfig::default());
         assert!(!entries.is_empty(), "应该扫描到至少一个文件");
-        
+
         // 验证所有条目都有有效的 ID
         for entry in &entries {
             assert!(entry.id < entries.len() as u64);
@@ -86,13 +132,34 @@ mod tests {
 
     #[test]
     fn test_exclusion() {
-        let excludes = vec!["target".to_string()];
-        let entries = scan_volume_fast(".", &excludes);
-        
+        let config = AppConfig {
+            excluded_paths: vec!["target".to_string()],
+            ..Default::default()
+        };
+        let entries = scan_volume_fast(".", &config);
+
         // 验证没有路径包含 "target" 的条目
         for entry in &entries {
-            assert!(!entry.path.to_lowercase().contains("target"), 
+            assert!(!entry.path.to_lowercase().contains("target"),
                    "路径 {} 应该被排除", entry.path);
+        }
+    }
+
+    #[test]
+    fn test_exclude_pattern_and_extension() {
+        let config = AppConfig {
+            excluded_paths: vec![],
+            excluded_file_patterns: vec!["*.md".to_string()],
+            excluded_extensions: vec!["toml".to_string()],
+            ..Default::default()
+        };
+        let entries = scan_volume_fast(".", &config);
+
+        for entry in &entries {
+            assert!(!entry.name.to_lowercase().ends_with(".md"),
+                   "文件 {} 命中屏蔽模式 *.md，应该被排除", entry.name);
+            assert!(entry.is_dir || entry.extension != "toml",
+                   "文件 {} 的扩展名被屏蔽，应该被排除", entry.name);
         }
     }
 
@@ -100,17 +167,12 @@ mod tests {
     fn test_scan_all_volumes() {
         // 创建模拟的卷信息
         let volumes = vec![
-            VolumeInfo {
-                drive_letter: ".".to_string(),
-                volume_name: "Test".to_string(),
-                total_size: 0,
-                is_ntfs: true,
-            },
+            VolumeInfo { drive_letter: ".".to_string() },
         ];
-        
-        let entries = scan_all_volumes(&volumes, &[]);
+
+        let entries = scan_all_volumes(&volumes, &AppConfig::default());
         assert!(!entries.is_empty(), "应该扫描到至少一个文件");
-        
+
         // 验证 ID 全局唯一
         let mut ids: Vec<u64> = entries.iter().map(|e| e.id).collect();
         ids.sort();

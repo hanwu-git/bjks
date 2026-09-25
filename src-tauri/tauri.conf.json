@@ -1,8 +1,8 @@
 {
-  "$schema": "https://schema.tauri.app/tauri/2.0.0-rc.0.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "BJKS",
   "version": "1.0.0",
-  "identifier": "com.benjisousa.app",
+  "identifier": "com.bjks.app",
   "build": {
     "frontendDist": "../src",
     "beforeDevCommand": "",
@@ -32,11 +32,6 @@
     ],
     "resources": {
       "../程序说明.md": "程序说明.md"
-    },
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser"
-      }
     }
   }
 }

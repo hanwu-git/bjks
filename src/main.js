@@ -449,28 +449,29 @@ async function addExcludeItem(type) {
     };
 
     const value = prompt(prompts[type]);
-    if (!value) return;
+    if (!value || !value.trim()) return;
 
     try {
-        if (type === 'path') {
-            await invoke('add_exclude_path', { path: value });
-        }
+        await invoke('add_exclude_item', { kind: type, value: value.trim() });
         await loadSettings();
     } catch (error) {
         console.error('添加屏蔽项失败:', error);
     }
 }
 
+// 屏蔽项类型到配置字段的映射
+const EXCLUDE_FIELDS = {
+    path: 'excluded_paths',
+    pattern: 'excluded_file_patterns',
+    extension: 'excluded_extensions'
+};
+
 // 删除屏蔽项
 window.removeExcludeItem = async function(type, index) {
     try {
         const config = await invoke('get_config');
-
-        if (type === 'path') {
-            const path = config.excluded_paths[index];
-            await invoke('remove_exclude_path', { path });
-        }
-
+        const value = config[EXCLUDE_FIELDS[type]][index];
+        await invoke('remove_exclude_item', { kind: type, value });
         await loadSettings();
     } catch (error) {
         console.error('删除屏蔽项失败:', error);
@@ -492,12 +493,23 @@ async function saveSettingsHandler() {
 
 // 重新扫描
 async function rescanHandler() {
+    rescanBtn.disabled = true;
+    indexStatus.textContent = '正在重新扫描…';
+    indexStatus.style.color = '#0078d4';
     try {
-        await invoke('rescan');
-        alert('重新扫描已启动');
-        await updateIndexStatus();
+        const ok = await invoke('rescan');
+        if (ok) {
+            await updateIndexStatus();
+        } else {
+            indexStatus.textContent = '重新扫描中止：没有可用的盘符';
+            indexStatus.style.color = '#e74c3c';
+        }
     } catch (error) {
         console.error('重新扫描失败:', error);
+        indexStatus.textContent = `重新扫描失败: ${error}`;
+        indexStatus.style.color = '#e74c3c';
+    } finally {
+        rescanBtn.disabled = false;
     }
 }
 

@@ -127,10 +127,6 @@ impl SearchEngine {
         }
     }
 
-    pub fn update_index(&mut self, new_index: Vec<FileEntry>) {
-        self.index = new_index;
-    }
-
     pub fn get_index_count(&self) -> usize {
         self.index.len()
     }
@@ -208,8 +204,11 @@ mod tests {
         
         let request = SearchRequest {
             query: "福建 交流".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -224,11 +223,14 @@ mod tests {
         let index = create_test_index();
         let engine = SearchEngine::new(index);
         
-        // 测试 .jp 匹配 .jpg 和 .jpeg
+        // 测试扩展名框 jp 匹配 .jpg 和 .jpeg
         let request = SearchRequest {
-            query: ".jp".to_string(),
+            query: String::new(),
+            ext_query: "jp".to_string(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -243,11 +245,14 @@ mod tests {
         let index = create_test_index();
         let engine = SearchEngine::new(index);
         
-        // 测试 report .pdf
+        // 测试文件名 report + 扩展名 pdf
         let request = SearchRequest {
-            query: "report .pdf".to_string(),
+            query: "report".to_string(),
+            ext_query: "pdf".to_string(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -264,8 +269,11 @@ mod tests {
         
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -281,8 +289,11 @@ mod tests {
         
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Size,
             sort_asc: false, // 降序
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -298,8 +309,11 @@ mod tests {
 
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -318,8 +332,11 @@ mod tests {
 
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: false,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -338,8 +355,11 @@ mod tests {
 
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Modified,
             sort_asc: false, // 最新修改在前
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -359,8 +379,11 @@ mod tests {
 
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Path,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -380,8 +403,11 @@ mod tests {
 
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -412,8 +438,11 @@ mod tests {
         let engine = SearchEngine::new(large_index);
         let request = SearchRequest {
             query: "file_123".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -451,8 +480,11 @@ mod tests {
 
         let request = SearchRequest {
             query: "test_5".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Size,
             sort_asc: false,
+            sort_orders: vec![],
             offset: 0,
             limit: 1000,
         };
@@ -491,15 +523,18 @@ mod tests {
         for query in special_queries {
             let request = SearchRequest {
                 query: query.to_string(),
+                ext_query: String::new(),
+                only_folders: false,
                 sort_by: SortField::Name,
                 sort_asc: true,
+                sort_orders: vec![],
                 offset: 0,
                 limit: 100,
             };
             
             // 应该不崩溃，返回空结果
             let response = engine.search(&request);
-            assert!(response.total >= 0);
+            assert_eq!(response.total, 0);
         }
     }
 
@@ -512,15 +547,18 @@ mod tests {
         let long_query = "a".repeat(1000);
         let request = SearchRequest {
             query: long_query,
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
         
-        // 应该不崩溃
+        // 应该不崩溃，返回空结果
         let response = engine.search(&request);
-        assert!(response.total >= 0);
+        assert_eq!(response.total, 0);
     }
 
     #[test]
@@ -556,8 +594,11 @@ mod tests {
         // 搜索中文
         let request = SearchRequest {
             query: "中文".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -568,8 +609,11 @@ mod tests {
         // 搜索 emoji
         let request = SearchRequest {
             query: "😀".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -587,8 +631,11 @@ mod tests {
         // 使用一个会匹配所有路径的查询
         let request = SearchRequest {
             query: "nonexistent_xyz_123".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -606,8 +653,11 @@ mod tests {
         
         let request = SearchRequest {
             query: "test".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 0,
             limit: 100,
         };
@@ -625,8 +675,11 @@ mod tests {
         
         let request = SearchRequest {
             query: "".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
             sort_by: SortField::Name,
             sort_asc: true,
+            sort_orders: vec![],
             offset: 10000, // 超出实际数量
             limit: 100,
         };

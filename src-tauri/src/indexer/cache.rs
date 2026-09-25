@@ -86,12 +86,6 @@ impl IndexCache {
 
         Ok(entries)
     }
-
-    pub fn clear(&self) -> Result<(), String> {
-        self.conn.execute("DELETE FROM file_index", [])
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -140,11 +134,6 @@ mod tests {
         assert_eq!(loaded[0].name, "file1.txt");
         assert_eq!(loaded[1].name, "file2.txt");
         assert_eq!(loaded[2].name, "file3.txt");
-
-        // 清空数据
-        cache.clear().expect("清空数据失败");
-        let loaded_after_clear = cache.load_all().expect("加载数据失败");
-        assert_eq!(loaded_after_clear.len(), 0, "清空后应该没有记录");
 
         // 清理测试文件
         drop(cache);

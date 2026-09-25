@@ -1,0 +1,26 @@
+# Rust
+target/
+Cargo.lock
+
+# Node
+node_modules/
+package-lock.json
+package.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp_*
+*.tmp

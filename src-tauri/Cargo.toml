@@ -1,6 +1,6 @@
 [package]
 name = "BJKS"
-version = "1.0.0"
+version = "1.0.1"
 description = "本机快搜 - Windows 本地文件快速搜索工具"
 authors = ["hanwu-git"]
 edition = "2021"

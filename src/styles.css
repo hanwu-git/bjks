@@ -158,6 +158,26 @@ body {
     border-color: #0078d4;
 }
 
+.sort-reset {
+    background: transparent;
+    border: none;
+    color: #888;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin-left: 4px;
+}
+
+.sort-reset:hover {
+    color: #d32f2f;
+}
+
+.sort-tip {
+    font-size: 11px;
+    color: #999;
+    margin-left: auto;
+}
+
 /* 结果容器 */
 .results-container {
     flex: 1;

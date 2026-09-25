@@ -34,3 +34,10 @@ windows = { version = "0.58", features = [
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"          # 优化体积
+lto = true               # 链接时优化
+codegen-units = 1        # 单代码生成单元，进一步优化
+panic = "abort"          # 移除 panic 展开代码
+strip = true             # 去除符号表

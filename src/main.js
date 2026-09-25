@@ -149,10 +149,10 @@ function setupEventListeners() {
     document.querySelectorAll('.sort-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const field = e.target.dataset.sort;
-            const isCtrl = e.ctrlKey || e.metaKey;
-            handleSortClick(field, isCtrl);
+            handleSortClick(field);
         });
     });
+    document.getElementById('resetSort').addEventListener('click', resetSort);
 
     // 右键菜单
     resultsBody.addEventListener('contextmenu', showContextMenu);
@@ -167,26 +167,25 @@ function setupEventListeners() {
     document.getElementById('addExcludeExtension').addEventListener('click', () => addExcludeItem('extension'));
 }
 
-// 处理排序点击
-function handleSortClick(field, isCtrl) {
+// 处理排序点击（连续点击不同列自动组合排序）
+function handleSortClick(field) {
     const existingIndex = sortOrders.findIndex(o => o.field === field);
 
-    if (isCtrl) {
-        // 组合排序：Ctrl+点击添加/切换/移除字段
-        if (existingIndex >= 0) {
-            sortOrders[existingIndex].asc = !sortOrders[existingIndex].asc;
-        } else {
-            sortOrders.push({ field, asc: true });
-        }
+    if (existingIndex >= 0) {
+        // 点击已排序字段：切换方向
+        sortOrders[existingIndex].asc = !sortOrders[existingIndex].asc;
     } else {
-        // 单字段排序：普通点击重置为单个字段
-        if (existingIndex >= 0 && sortOrders.length === 1) {
-            sortOrders[0].asc = !sortOrders[0].asc;
-        } else {
-            sortOrders = [{ field, asc: true }];
-        }
+        // 点击新字段：追加到组合排序
+        sortOrders.push({ field, asc: true });
     }
 
+    updateSortButtons();
+    performSearch();
+}
+
+// 重置排序
+function resetSort() {
+    sortOrders = [{ field: 'Name', asc: true }];
     updateSortButtons();
     performSearch();
 }

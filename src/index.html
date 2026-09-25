@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BJKS</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部搜索栏 -->
+        <header class="search-header">
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="searchInput" placeholder="输入关键词搜索文件... (支持多关键词，如: 福建 交流)" autofocus>
+                <button id="settingsBtn" class="icon-btn" title="设置">⚙️</button>
+                <button id="aboutBtn" class="icon-btn" title="关于">?</button>
+            </div>
+            <div class="filter-bar">
+                <select id="extTypeSelect" class="filter-select" title="选择文件类型">
+                    <option value="all">所有</option>
+                    <option value="audio">音频</option>
+                    <option value="compressed">压缩文件</option>
+                    <option value="document">文档</option>
+                    <option value="executable">可执行文件</option>
+                    <option value="folder">文件夹</option>
+                    <option value="image">图片</option>
+                    <option value="video">视频</option>
+                </select>
+                <input type="text" id="extInput" class="filter-input" placeholder="扩展名过滤，如 jpg png pdf，多个用空格分隔">
+            </div>
+        </header>
+
+        <!-- 状态栏 -->
+        <div class="status-bar">
+            <span id="indexStatus">已索引 0 个文件</span>
+            <span id="searchStatus">搜索耗时 0ms</span>
+        </div>
+        <!-- 排序栏 -->
+        <div class="sort-bar">
+            <span>排序:</span>
+            <button class="sort-btn active" data-sort="Name" data-asc="true">名称 ▼</button>
+            <button class="sort-btn" data-sort="Size" data-asc="true">大小</button>
+            <button class="sort-btn" data-sort="Modified" data-asc="true">修改时间</button>
+        </div>
+
+        <!-- 结果列表 -->
+        <div class="results-container">
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th class="col-icon"></th>
+                        <th class="col-name">文件名</th>
+                        <th class="col-path">路径</th>
+                        <th class="col-modified">修改时间</th>
+                        <th class="col-size">大小</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                    <!-- 动态填充 -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 分页栏 -->
+        <div class="pagination-bar">
+            <span id="paginationInfo">共 0 条结果</span>
+        </div>
+
+        <!-- 右键菜单 -->
+        <div id="contextMenu" class="context-menu" style="display: none;">
+            <div class="menu-item" data-action="open">打开文件</div>
+            <div class="menu-item" data-action="openFolder">打开所在目录</div>
+            <div class="menu-item" data-action="copyPath">复制路径</div>
+        </div>
+
+        <!-- 关于弹窗 -->
+        <div id="aboutModal" class="modal" style="display: none;">
+            <div class="modal-content about-content">
+                <div class="modal-header">
+                    <h2>关于 BJKS</h2>
+                    <button id="closeAbout" class="icon-btn">×</button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>BJKS（本机快搜）</strong></p>
+                    <p>版本号：<span id="versionText">-</span></p>
+                    <p>基于 Tauri 2.x + Rust 开发的 Windows 本地文件快速搜索工具。</p>
+                    <div class="about-actions">
+                        <button id="readmeBtn" class="primary-btn">升级说明</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 说明文档弹窗 -->
+        <div id="readmeModal" class="modal" style="display: none;">
+            <div class="modal-content readme-content">
+                <div class="modal-header">
+                    <h2>升级说明 / 程序说明</h2>
+                    <button id="closeReadme" class="icon-btn">×</button>
+                </div>
+                <div class="modal-body">
+                    <pre id="readmeText" class="readme-text"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置面板 -->
+        <div id="settingsPanel" class="settings-panel" style="display: none;">
+            <div class="settings-header">
+                <h2>⚙ 设置</h2>
+                <button id="closeSettings" class="icon-btn">×</button>
+            </div>
+            <div class="settings-content">
+                <section class="settings-section">
+                    <h3>📂 屏蔽目录</h3>
+                    <ul id="excludePathsList"></ul>
+                    <button id="addExcludePath" class="add-btn">+ 添加目录</button>
+                </section>
+                <section class="settings-section">
+                    <h3>📄 屏蔽文件模式</h3>
+                    <ul id="excludePatternsList"></ul>
+                    <button id="addExcludePattern" class="add-btn">+ 添加模式</button>
+                </section>
+                <section class="settings-section">
+                    <h3>🏷 屏蔽扩展名</h3>
+                    <ul id="excludeExtensionsList"></ul>
+                    <button id="addExcludeExtension" class="add-btn">+ 添加扩展名</button>
+                </section>
+            </div>
+            <div class="settings-footer">
+                <button id="saveSettings" class="primary-btn">保存</button>
+                <button id="rescanBtn" class="secondary-btn">重新扫描</button>
+            </div>
+        </div>
+    </div>
+    <script src="main.js"></script>
+</body>
+</html>

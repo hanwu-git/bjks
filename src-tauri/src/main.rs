@@ -12,6 +12,7 @@ use config::settings::load_config;
 use indexer::enumerate_volumes;
 use indexer::startup::{load_or_scan, start_background_scan};
 use logger::app_log;
+use models::ScanProgress;
 use search::engine::SearchEngine;
 use std::sync::{Arc, Mutex};
 
@@ -39,11 +40,17 @@ fn main() {
     // 4. 创建搜索引擎
     let engine = SearchEngine::new(entries);
 
-    // 5. 创建共享状态
+    // 5. 创建共享状态（progress 预置总盘数，便于前端立即显示第 X/Y 个盘）
+    let progress = Arc::new(Mutex::new(ScanProgress {
+        total_volumes: volumes.len(),
+        ..Default::default()
+    }));
+
     let app_state = AppState {
         engine: Arc::new(Mutex::new(engine)),
         is_scanning: Arc::new(Mutex::new(needs_refresh)),
         scanned_files: Arc::new(Mutex::new(entry_count)),
+        progress: Arc::clone(&progress),
     };
 
     // 6. 如果缓存过期或为空，启动后台扫描线程刷新索引
@@ -54,6 +61,7 @@ fn main() {
             Arc::clone(&app_state.engine),
             Arc::clone(&app_state.scanned_files),
             Arc::clone(&app_state.is_scanning),
+            progress,
         );
     }
 
@@ -73,6 +81,7 @@ fn main() {
             commands::settings::rescan,
             commands::settings::open_file,
             commands::settings::open_folder,
+            commands::settings::list_volumes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

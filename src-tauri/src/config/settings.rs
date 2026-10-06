@@ -37,9 +37,14 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
+
+    /// 三个测试共用同一个配置文件，通过锁串行化避免相互覆盖
+    static CONFIG_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_save_and_load_config() {
+        let _guard = CONFIG_TEST_LOCK.lock().unwrap();
         // 创建测试配置
         let config = AppConfig {
             excluded_paths: vec!["C:\\Test".to_string()],
@@ -71,6 +76,7 @@ mod tests {
 
     #[test]
     fn test_load_default_config() {
+        let _guard = CONFIG_TEST_LOCK.lock().unwrap();
         // 删除配置文件（如果存在）
         let path = get_config_path();
         if path.exists() {
@@ -90,6 +96,7 @@ mod tests {
 
     #[test]
     fn test_config_file_is_json() {
+        let _guard = CONFIG_TEST_LOCK.lock().unwrap();
         // 保存配置
         let config = AppConfig::default();
         save_config(&config).expect("保存配置失败");

@@ -33,7 +33,15 @@
 
         <!-- 状态栏 -->
         <div class="status-bar">
-            <span id="indexStatus">已索引 0 个文件</span>
+            <span class="status-left">
+                <span id="indexStatus">已索引 0 个文件</span>
+                <span id="scanProgress" class="scan-progress" style="display: none;">
+                    <span class="scan-progress-track">
+                        <span id="scanProgressFill" class="scan-progress-fill"></span>
+                    </span>
+                    <span id="scanProgressText" class="scan-progress-text"></span>
+                </span>
+            </span>
             <span id="searchStatus">搜索耗时 0ms</span>
         </div>
         <!-- 排序栏 -->
@@ -115,6 +123,11 @@
             </div>
             <div class="settings-content">
                 <section class="settings-section">
+                    <h3>💽 索引盘符</h3>
+                    <div id="driveList" class="drive-list"></div>
+                    <p class="settings-hint">只有勾选的盘符参与索引，默认 C 盘和 D 盘。修改后保存，再点「重建索引」生效。</p>
+                </section>
+                <section class="settings-section">
                     <h3>📂 屏蔽目录</h3>
                     <ul id="excludePathsList"></ul>
                     <button id="addExcludePath" class="add-btn">+ 添加目录</button>
@@ -132,7 +145,7 @@
             </div>
             <div class="settings-footer">
                 <button id="saveSettings" class="primary-btn">保存</button>
-                <button id="rescanBtn" class="secondary-btn">重新扫描</button>
+                <button id="rescanBtn" class="secondary-btn">重建索引</button>
             </div>
         </div>
     </div>

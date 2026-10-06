@@ -1,7 +1,5 @@
-use crate::indexer::VolumeInfo;
 use crate::models::{AppConfig, FileEntry};
 use glob::Pattern;
-use rayon::prelude::*;
 use walkdir::{DirEntry, WalkDir};
 
 /// 扫描排除规则：目录路径、文件名通配模式、扩展名
@@ -61,8 +59,15 @@ impl ScanFilter {
     }
 }
 
-/// 扫描指定卷（使用 walkdir 遍历）
-pub fn scan_volume_fast(root: &str, config: &AppConfig) -> Vec<FileEntry> {
+/// 进度回调的文件数间隔
+const PROGRESS_INTERVAL: usize = 500;
+
+/// 扫描指定卷，并通过回调持续上报已扫描的文件数
+pub fn scan_volume_fast_with_progress(
+    root: &str,
+    config: &AppConfig,
+    on_progress: &dyn Fn(usize),
+) -> Vec<FileEntry> {
     let filter = ScanFilter::from_config(config);
     let mut entries = Vec::new();
     let mut id_counter: u64 = 0;
@@ -94,29 +99,25 @@ pub fn scan_volume_fast(root: &str, config: &AppConfig) -> Vec<FileEntry> {
         };
         entries.push(file_entry);
         id_counter += 1;
-    }
-    entries
-}
 
-/// 并行扫描多个卷
-pub fn scan_all_volumes(volumes: &[VolumeInfo], config: &AppConfig) -> Vec<FileEntry> {
-    volumes
-        .par_iter()
-        .flat_map(|vol| {
-            let mut entries = scan_volume_fast(&vol.drive_letter, config);
-            // 重新分配 ID 以确保全局唯一性
-            let start_id = entries.first().map(|e| e.id).unwrap_or(0);
-            for (idx, entry) in entries.iter_mut().enumerate() {
-                entry.id = start_id + idx as u64;
-            }
-            entries
-        })
-        .collect()
+        if entries.len() % PROGRESS_INTERVAL == 0 {
+            on_progress(entries.len());
+        }
+    }
+
+    on_progress(entries.len());
+    entries
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+
+    /// 测试用：不带进度回调的扫描
+    fn scan_volume_fast(root: &str, config: &AppConfig) -> Vec<FileEntry> {
+        scan_volume_fast_with_progress(root, config, &|_| {})
+    }
 
     #[test]
     fn test_scan_subdirectory() {
@@ -164,19 +165,14 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_all_volumes() {
-        // 创建模拟的卷信息
-        let volumes = vec![
-            VolumeInfo { drive_letter: ".".to_string() },
-        ];
+    fn test_scan_with_progress_callback() {
+        // 进度回调应至少被调用一次，且最终数量与结果一致
+        let total = Cell::new(0usize);
+        let entries = scan_volume_fast_with_progress(".", &AppConfig::default(), &|count| {
+            total.set(count);
+        });
 
-        let entries = scan_all_volumes(&volumes, &AppConfig::default());
         assert!(!entries.is_empty(), "应该扫描到至少一个文件");
-
-        // 验证 ID 全局唯一
-        let mut ids: Vec<u64> = entries.iter().map(|e| e.id).collect();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), entries.len(), "ID 应该全局唯一");
+        assert_eq!(total.get(), entries.len(), "最终进度应等于扫描条目总数");
     }
 }

@@ -42,7 +42,7 @@ impl Default for AppConfig {
                 "*.tmp".into(),
             ],
             excluded_extensions: vec![],
-            scan_drives: vec![],  // 空表示扫描所有 NTFS 盘
+            scan_drives: vec!["C:".into(), "D:".into()],  // 默认只索引 C 盘和 D 盘
             max_results: 1000,
         }
     }
@@ -89,6 +89,17 @@ pub struct IndexStatus {
     pub scanned_files: usize,
     pub total_estimated: usize,  // 0 表示未知
     pub progress_percent: f32,
+    pub total_volumes: usize,     // 本次扫描的盘总数
+    pub completed_volumes: usize, // 已扫描完成的盘数
+    pub current_volume: String,   // 当前正在扫描的盘符（如 "D:\\"）
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ScanProgress {
+    pub total_volumes: usize,
+    pub completed_volumes: usize,
+    pub current_volume: String,
+    pub scanned_files: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

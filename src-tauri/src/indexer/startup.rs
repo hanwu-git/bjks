@@ -1,9 +1,10 @@
 use crate::indexer::cache::IndexCache;
-use crate::indexer::mft_scanner::scan_all_volumes;
+use crate::indexer::mft_scanner::scan_volume_fast_with_progress;
 use crate::indexer::VolumeInfo;
 use crate::logger::{app_data_dir, app_log};
-use crate::models::{AppConfig, FileEntry};
+use crate::models::{AppConfig, FileEntry, ScanProgress};
 use crate::search::engine::SearchEngine;
+use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -109,6 +110,64 @@ pub fn load_or_scan() -> (Vec<FileEntry>, bool) {
     (entries, true)
 }
 
+/// 顺序扫描多个卷，并持续上报进度（按盘推进，便于给出真实百分比）
+fn scan_volumes_with_progress(
+    volumes: &[VolumeInfo],
+    config: &AppConfig,
+    progress: &Arc<Mutex<ScanProgress>>,
+    scanned_files: &Arc<Mutex<usize>>,
+) -> Vec<FileEntry> {
+    {
+        let mut p = progress.lock().unwrap();
+        p.total_volumes = volumes.len();
+        p.completed_volumes = 0;
+        p.current_volume.clear();
+        p.scanned_files = 0;
+    }
+    *scanned_files.lock().unwrap() = 0;
+
+    let mut all: Vec<FileEntry> = Vec::new();
+    let scanned = Cell::new(0usize);
+
+    for vol in volumes {
+        app_log(&format!("开始扫描卷：{}", vol.drive_letter));
+        progress.lock().unwrap().current_volume = vol.drive_letter.clone();
+
+        let on_progress = |count: usize| {
+            let abs = scanned.get() + count;
+            if let Ok(mut p) = progress.lock() {
+                p.scanned_files = abs;
+            }
+            if let Ok(mut s) = scanned_files.lock() {
+                *s = abs;
+            }
+        };
+
+        let mut entries =
+            scan_volume_fast_with_progress(&vol.drive_letter, config, &on_progress);
+        scanned.set(scanned.get() + entries.len());
+
+        // 重新编号，保证跨卷 ID 全局唯一
+        let start_id = all.len() as u64;
+        for (idx, entry) in entries.iter_mut().enumerate() {
+            entry.id = start_id + idx as u64;
+        }
+        all.extend(entries);
+
+        let mut p = progress.lock().unwrap();
+        p.completed_volumes += 1;
+        p.scanned_files = all.len();
+        app_log(&format!(
+            "卷 {} 扫描完成，累计 {} 个条目",
+            vol.drive_letter,
+            all.len()
+        ));
+    }
+
+    *scanned_files.lock().unwrap() = all.len();
+    all
+}
+
 /// 后台扫描并更新搜索引擎
 pub fn start_background_scan(
     volumes: Vec<VolumeInfo>,
@@ -116,12 +175,13 @@ pub fn start_background_scan(
     engine: Arc<Mutex<SearchEngine>>,
     scanned_files: Arc<Mutex<usize>>,
     is_scanning: Arc<Mutex<bool>>,
+    progress: Arc<Mutex<ScanProgress>>,
 ) {
     thread::spawn(move || {
         app_log("后台扫描线程启动");
         *is_scanning.lock().unwrap() = true;
 
-        let entries = scan_all_volumes(&volumes, &config);
+        let entries = scan_volumes_with_progress(&volumes, &config, &progress, &scanned_files);
         let count = entries.len();
         app_log(&format!("后台扫描完成：{} 个文件", count));
 
@@ -138,16 +198,22 @@ pub fn start_background_scan(
 }
 
 /// 强制重新扫描：删除旧缓存并全量重建（同步执行，会阻塞调用者）
-pub fn force_rescan(volumes: &[VolumeInfo], config: &AppConfig) -> Vec<FileEntry> {
+pub fn force_rescan(
+    volumes: &[VolumeInfo],
+    config: &AppConfig,
+    progress: &Arc<Mutex<ScanProgress>>,
+    scanned_files: &Arc<Mutex<usize>>,
+) -> Vec<FileEntry> {
     let cache_path = get_cache_path();
 
     // 删除旧缓存
     if cache_path.exists() {
         fs::remove_file(&cache_path).ok();
+        app_log("已删除旧索引缓存");
     }
 
     // 执行全量扫描
-    let entries = scan_all_volumes(volumes, config);
+    let entries = scan_volumes_with_progress(volumes, config, progress, scanned_files);
 
     // 保存新缓存
     save_cache(&entries);

@@ -21,6 +21,10 @@ const extTypeSelect = document.getElementById('extTypeSelect');
 const settingsBtn = document.getElementById('settingsBtn');
 const aboutBtn = document.getElementById('aboutBtn');
 const indexStatus = document.getElementById('indexStatus');
+const scanProgress = document.getElementById('scanProgress');
+const scanProgressFill = document.getElementById('scanProgressFill');
+const scanProgressText = document.getElementById('scanProgressText');
+const driveList = document.getElementById('driveList');
 const searchStatus = document.getElementById('searchStatus');
 const resultsBody = document.getElementById('resultsBody');
 const paginationInfo = document.getElementById('paginationInfo');
@@ -285,16 +289,29 @@ async function updateIndexStatus() {
     try {
         const status = await invoke('get_index_status');
         if (status.is_scanning) {
-            indexStatus.textContent = `正在建立索引… 已扫描 ${status.scanned_files.toLocaleString()} 个文件`;
+            const total = status.total_volumes || 0;
+            const current = Math.min(status.completed_volumes + 1, total);
+            indexStatus.textContent = total > 0
+                ? `正在建立索引… 第 ${current}/${total} 个盘`
+                : '正在建立索引…';
             indexStatus.style.color = '#0078d4';
+
+            const percent = Math.max(0, Math.min(100, status.progress_percent || 0));
+            scanProgress.style.display = 'inline-flex';
+            scanProgressFill.style.width = `${percent}%`;
+            scanProgressText.textContent =
+                `${percent.toFixed(0)}% · 已扫描 ${status.scanned_files.toLocaleString()} 个文件`;
         } else {
             indexStatus.textContent = `已索引 ${status.scanned_files.toLocaleString()} 个文件`;
             indexStatus.style.color = '';
+            scanProgress.style.display = 'none';
+            scanProgressFill.style.width = '0%';
         }
     } catch (error) {
         console.error('获取索引状态失败:', error);
         indexStatus.textContent = `索引状态获取失败: ${error}`;
         indexStatus.style.color = '#e74c3c';
+        scanProgress.style.display = 'none';
     }
 }
 
@@ -420,9 +437,49 @@ async function loadSettings() {
         renderExcludeList('excludePathsList', config.excluded_paths, 'path');
         renderExcludeList('excludePatternsList', config.excluded_file_patterns, 'pattern');
         renderExcludeList('excludeExtensionsList', config.excluded_extensions, 'extension');
+        await renderDriveOptions(config.scan_drives);
     } catch (error) {
         console.error('加载设置失败:', error);
     }
+}
+
+// 规范化盘符显示，如 "C" / "C:\" -> "C:"
+function normalizeDriveLabel(drive) {
+    const letter = String(drive || '').trim().replace(/[\\/:]+$/, '').toUpperCase();
+    return letter ? `${letter}:` : '';
+}
+
+// 渲染索引盘符勾选项
+async function renderDriveOptions(selected) {
+    let drives = [];
+    try {
+        drives = await invoke('list_volumes');
+    } catch (error) {
+        console.error('获取盘符列表失败:', error);
+    }
+
+    const selectedSet = new Set((selected || []).map(normalizeDriveLabel));
+    driveList.innerHTML = '';
+
+    drives.forEach(drive => {
+        const label = document.createElement('label');
+        label.className = 'drive-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = drive;
+        checkbox.checked = selectedSet.has(drive);
+
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(drive));
+        driveList.appendChild(label);
+    });
+}
+
+// 读取当前勾选的索引盘符
+function getCheckedDrives() {
+    return Array.from(driveList.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(cb => cb.value);
 }
 
 // 渲染屏蔽列表
@@ -481,9 +538,16 @@ window.removeExcludeItem = async function(type, index) {
 // 保存设置
 async function saveSettingsHandler() {
     try {
+        const checkedDrives = getCheckedDrives();
+        if (checkedDrives.length === 0) {
+            alert('请至少勾选一个参与索引的盘符');
+            return;
+        }
+
         const config = await invoke('get_config');
+        config.scan_drives = checkedDrives;
         await invoke('save_settings', { config });
-        alert('设置已保存');
+        alert('设置已保存，点击「重建索引」后生效');
         closeSettingsPanel();
     } catch (error) {
         console.error('保存设置失败:', error);
@@ -491,22 +555,22 @@ async function saveSettingsHandler() {
     }
 }
 
-// 重新扫描
+// 重建索引：清空现有索引后重新扫描
 async function rescanHandler() {
+    const confirmed = confirm('重建索引将清空现有索引并重新扫描磁盘，可能需要几分钟，确定继续吗？');
+    if (!confirmed) return;
+
     rescanBtn.disabled = true;
-    indexStatus.textContent = '正在重新扫描…';
-    indexStatus.style.color = '#0078d4';
     try {
         const ok = await invoke('rescan');
-        if (ok) {
-            await updateIndexStatus();
-        } else {
-            indexStatus.textContent = '重新扫描中止：没有可用的盘符';
+        if (!ok) {
+            indexStatus.textContent = '重建索引中止：没有可用的盘符';
             indexStatus.style.color = '#e74c3c';
         }
+        await updateIndexStatus();
     } catch (error) {
-        console.error('重新扫描失败:', error);
-        indexStatus.textContent = `重新扫描失败: ${error}`;
+        console.error('重建索引失败:', error);
+        indexStatus.textContent = `重建索引失败: ${error}`;
         indexStatus.style.color = '#e74c3c';
     } finally {
         rescanBtn.disabled = false;

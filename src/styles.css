@@ -124,6 +124,44 @@ body {
     border-bottom: 1px solid #e0e0e0;
 }
 
+.status-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.scan-progress {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.scan-progress-track {
+    display: inline-block;
+    width: 120px;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    vertical-align: middle;
+}
+
+.scan-progress-fill {
+    display: block;
+    width: 0%;
+    height: 100%;
+    background: #0078d4;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.scan-progress-text {
+    font-size: 12px;
+    color: #0078d4;
+    white-space: nowrap;
+}
+
 /* 排序栏 */
 .sort-bar {
     background: #fff;
@@ -368,6 +406,35 @@ body {
 .add-btn:hover {
     background: #f5f5f5;
     border-color: #666;
+}
+
+.drive-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.drive-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: #f5f5f5;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+}
+
+.drive-item input {
+    cursor: pointer;
+}
+
+.settings-hint {
+    font-size: 12px;
+    color: #999;
+    line-height: 1.5;
 }
 
 .settings-footer {

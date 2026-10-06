@@ -73,12 +73,16 @@ pub async fn rescan(state: State<'_, AppState>) -> Result<bool, String> {
 
     let engine = Arc::clone(&state.engine);
     let scanned_files = Arc::clone(&state.scanned_files);
+    let scan_target = Arc::clone(&scanned_files);
     let is_scanning = Arc::clone(&state.is_scanning);
+    let progress = Arc::clone(&state.progress);
     *is_scanning.lock().unwrap() = true;
 
-    let entries = tauri::async_runtime::spawn_blocking(move || force_rescan(&volumes, &config))
-        .await
-        .map_err(|e| e.to_string())?;
+    let entries = tauri::async_runtime::spawn_blocking(move || {
+        force_rescan(&volumes, &config, &progress, &scan_target)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     let count = entries.len();
     app_log(&format!("重新扫描完成：{} 个文件", count));
@@ -87,6 +91,12 @@ pub async fn rescan(state: State<'_, AppState>) -> Result<bool, String> {
     *is_scanning.lock().unwrap() = false;
 
     Ok(true)
+}
+
+/// 列出当前可访问的盘符（形如 "C:"），供设置界面选择参与索引的盘
+#[tauri::command]
+pub fn list_volumes() -> Vec<String> {
+    crate::indexer::list_available_drives()
 }
 
 #[tauri::command]

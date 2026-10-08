@@ -438,9 +438,24 @@ async function loadSettings() {
         renderExcludeList('excludePatternsList', config.excluded_file_patterns, 'pattern');
         renderExcludeList('excludeExtensionsList', config.excluded_extensions, 'extension');
         await renderDriveOptions(config.scan_drives);
+        renderCloseAction(config.close_action);
     } catch (error) {
         console.error('加载设置失败:', error);
     }
+}
+
+// 渲染「关闭窗口时」选项（默认最小化到托盘）
+function renderCloseAction(action) {
+    const value = action === 'exit' ? 'exit' : 'minimize';
+    document.querySelectorAll('input[name="closeAction"]').forEach(radio => {
+        radio.checked = radio.value === value;
+    });
+}
+
+// 读取当前选中的关闭行为
+function getCloseAction() {
+    const checked = document.querySelector('input[name="closeAction"]:checked');
+    return checked ? checked.value : 'minimize';
 }
 
 // 规范化盘符显示，如 "C" / "C:\" -> "C:"
@@ -546,6 +561,7 @@ async function saveSettingsHandler() {
 
         const config = await invoke('get_config');
         config.scan_drives = checkedDrives;
+        config.close_action = getCloseAction();
         await invoke('save_settings', { config });
         alert('设置已保存，点击「重建索引」后生效');
         closeSettingsPanel();

@@ -52,6 +52,7 @@ mod tests {
             excluded_extensions: vec!["test".to_string()],
             scan_drives: vec!["C:".to_string()],
             max_results: 500,
+            ..AppConfig::default()
         };
 
         // 保存配置
@@ -92,6 +93,30 @@ mod tests {
         assert_eq!(config.excluded_extensions, default.excluded_extensions);
         assert_eq!(config.scan_drives, default.scan_drives);
         assert_eq!(config.max_results, default.max_results);
+    }
+
+    #[test]
+    fn test_old_config_missing_new_fields() {
+        let _guard = CONFIG_TEST_LOCK.lock().unwrap();
+        let path = get_config_path();
+
+        // 模拟旧版（1.0.2）配置文件：缺少 window_width/window_height/close_action
+        let legacy = serde_json::json!({
+            "excluded_paths": ["C:\\Windows"],
+            "excluded_file_patterns": ["*.tmp"],
+            "excluded_extensions": [],
+            "scan_drives": ["C:"],
+            "max_results": 1000
+        });
+        fs::write(&path, legacy.to_string()).expect("写入旧配置失败");
+
+        let config = load_config();
+        assert_eq!(config.window_width, 0, "旧配置窗口宽度应为 0（未记录）");
+        assert_eq!(config.window_height, 0, "旧配置窗口高度应为 0（未记录）");
+        assert_eq!(config.close_action, "minimize", "旧配置关闭行为应回退为最小化到托盘");
+        assert_eq!(config.max_results, 1000);
+
+        fs::remove_file(path).ok();
     }
 
     #[test]

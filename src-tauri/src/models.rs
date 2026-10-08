@@ -20,6 +20,17 @@ pub struct AppConfig {
     pub excluded_extensions: Vec<String>,    // 排除的扩展名
     pub scan_drives: Vec<String>,           // 要扫描的盘符
     pub max_results: usize,                 // 最大返回结果数
+    #[serde(default)]                       // 上次关闭时的窗口宽度（0 表示未记录，使用默认尺寸）
+    pub window_width: u32,
+    #[serde(default)]                       // 上次关闭时的窗口高度（0 表示未记录，使用默认尺寸）
+    pub window_height: u32,
+    #[serde(default = "default_close_action")] // 关闭窗口行为：minimize（最小化到托盘）/ exit（直接退出）
+    pub close_action: String,
+}
+
+/// 关闭窗口的默认行为：最小化到托盘，兼容旧配置文件缺字段的情况
+fn default_close_action() -> String {
+    "minimize".to_string()
 }
 
 impl Default for AppConfig {
@@ -44,6 +55,9 @@ impl Default for AppConfig {
             excluded_extensions: vec![],
             scan_drives: vec!["C:".into(), "D:".into()],  // 默认只索引 C 盘和 D 盘
             max_results: 1000,
+            window_width: 1200,
+            window_height: 800,
+            close_action: default_close_action(),
         }
     }
 }

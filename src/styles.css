@@ -437,6 +437,26 @@ body {
     line-height: 1.5;
 }
 
+.close-action-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.radio-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+}
+
+.radio-item input {
+    cursor: pointer;
+}
+
 .settings-footer {
     padding: 16px 20px;
     border-top: 1px solid #e0e0e0;

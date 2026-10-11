@@ -2,6 +2,42 @@ use crate::models::{FileEntry, SearchRequest, SearchResponse, SortField, SortOrd
 use rayon::prelude::*;
 use std::time::Instant;
 
+/// 不区分大小写的子串匹配（零分配）。
+/// ASCII 字节按忽略大小写比较；非 ASCII（如中文）按字节精确比较。
+fn contains_ignore_case(haystack: &str, needle_lower: &str) -> bool {
+    let h = haystack.as_bytes();
+    let n = needle_lower.as_bytes();
+    if n.is_empty() {
+        return true;
+    }
+    if n.len() > h.len() {
+        return false;
+    }
+    for i in 0..=(h.len() - n.len()) {
+        if h[i..i + n.len()]
+            .iter()
+            .zip(n.iter())
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// 不区分大小写的字典序比较（零分配），用于按名称排序。
+fn cmp_ignore_case(a: &str, b: &str) -> std::cmp::Ordering {
+    let (ab, bb) = (a.as_bytes(), b.as_bytes());
+    let min = ab.len().min(bb.len());
+    for i in 0..min {
+        let (ca, cb) = (ab[i].to_ascii_lowercase(), bb[i].to_ascii_lowercase());
+        if ca != cb {
+            return ca.cmp(&cb);
+        }
+    }
+    ab.len().cmp(&bb.len())
+}
+
 pub struct SearchEngine {
     index: Vec<FileEntry>,
 }
@@ -38,7 +74,7 @@ impl SearchEngine {
                 .filter(|entry| {
                     // 文件名必须包含所有关键词（AND 逻辑）
                     name_keywords_lower.iter().all(|kw| {
-                        entry.name_lower.contains(kw.as_str())
+                        contains_ignore_case(&entry.name, kw)
                     })
                 })
                 .filter(|entry| {
@@ -61,7 +97,7 @@ impl SearchEngine {
                 .filter(|entry| {
                     // 文件名必须包含所有关键词（AND 逻辑）
                     name_keywords_lower.iter().all(|kw| {
-                        entry.name_lower.contains(kw.as_str())
+                        contains_ignore_case(&entry.name, kw)
                     })
                 })
                 .filter(|entry| {
@@ -74,10 +110,10 @@ impl SearchEngine {
                 .collect()
         };
         
-        // 排序（优先使用组合排序）
+        // 排序（优先使用组合排序；sort_orders 为空时按 sort_by，None 表示不排序）
         if !request.sort_orders.is_empty() {
             self.sort_results_multi(&mut results, &request.sort_orders);
-        } else {
+        } else if !matches!(&request.sort_by, SortField::None) {
             self.sort_results(&mut results, &request.sort_by, request.sort_asc);
         }
 
@@ -120,7 +156,8 @@ impl SearchEngine {
 
     fn compare_by_field(&self, a: &FileEntry, b: &FileEntry, field: &SortField) -> std::cmp::Ordering {
         match field {
-            SortField::Name => a.name_lower.cmp(&b.name_lower),
+            SortField::None => std::cmp::Ordering::Equal,
+            SortField::Name => cmp_ignore_case(&a.name, &b.name),
             SortField::Size => a.size.cmp(&b.size),
             SortField::Modified => a.modified.cmp(&b.modified),
             SortField::Path => a.path.cmp(&b.path),
@@ -140,56 +177,41 @@ mod tests {
     fn create_test_index() -> Vec<FileEntry> {
         vec![
             FileEntry {
-                id: 1,
-                name: "福建交流报告.docx".to_string(),
-                name_lower: "福建交流报告.docx".to_lowercase(),
-                path: "D:\\Documents\\福建交流报告.docx".to_string(),
-                parent_path: "D:\\Documents".to_string(),
-                extension: "docx".to_string(),
+                name: "福建交流报告.docx".into(),
+                path: "D:\\Documents\\福建交流报告.docx".into(),
+                extension: "docx".into(),
                 size: 1024,
                 modified: 1700000000,
                 is_dir: false,
             },
             FileEntry {
-                id: 2,
-                name: "福建交流纪要.pdf".to_string(),
-                name_lower: "福建交流纪要.pdf".to_lowercase(),
-                path: "E:\\Work\\福建交流纪要.pdf".to_string(),
-                parent_path: "E:\\Work".to_string(),
-                extension: "pdf".to_string(),
+                name: "福建交流纪要.pdf".into(),
+                path: "E:\\Work\\福建交流纪要.pdf".into(),
+                extension: "pdf".into(),
                 size: 2048,
                 modified: 1700000100,
                 is_dir: false,
             },
             FileEntry {
-                id: 3,
-                name: "照片.jpg".to_string(),
-                name_lower: "照片.jpg".to_lowercase(),
-                path: "F:\\Photos\\照片.jpg".to_string(),
-                parent_path: "F:\\Photos".to_string(),
-                extension: "jpg".to_string(),
+                name: "照片.jpg".into(),
+                path: "F:\\Photos\\照片.jpg".into(),
+                extension: "jpg".into(),
                 size: 512,
                 modified: 1700000200,
                 is_dir: false,
             },
             FileEntry {
-                id: 4,
-                name: "图片.jpeg".to_string(),
-                name_lower: "图片.jpeg".to_lowercase(),
-                path: "F:\\Photos\\图片.jpeg".to_string(),
-                parent_path: "F:\\Photos".to_string(),
-                extension: "jpeg".to_string(),
+                name: "图片.jpeg".into(),
+                path: "F:\\Photos\\图片.jpeg".into(),
+                extension: "jpeg".into(),
                 size: 768,
                 modified: 1700000300,
                 is_dir: false,
             },
             FileEntry {
-                id: 5,
-                name: "report.pdf".to_string(),
-                name_lower: "report.pdf".to_lowercase(),
-                path: "G:\\Reports\\report.pdf".to_string(),
-                parent_path: "G:\\Reports".to_string(),
-                extension: "pdf".to_string(),
+                name: "report.pdf".into(),
+                path: "G:\\Reports\\report.pdf".into(),
+                extension: "pdf".into(),
                 size: 4096,
                 modified: 1700000400,
                 is_dir: false,
@@ -259,7 +281,7 @@ mod tests {
         
         let response = engine.search(&request);
         assert_eq!(response.total, 1);
-        assert_eq!(response.results[0].name, "report.pdf");
+        assert_eq!(response.results[0].name.as_ref(), "report.pdf");
     }
 
     #[test]
@@ -299,7 +321,7 @@ mod tests {
         };
         
         let response = engine.search(&request);
-        assert_eq!(response.results[0].name, "report.pdf"); // 最大的文件
+        assert_eq!(response.results[0].name.as_ref(), "report.pdf"); // 最大的文件
     }
 
     #[test]
@@ -319,9 +341,10 @@ mod tests {
         };
 
         let response = engine.search(&request);
-        // 验证名称升序：name_lower 依次递增
+        // 验证名称升序：不区分大小写依次递增
         for i in 1..response.results.len() {
-            assert!(response.results[i - 1].name_lower <= response.results[i].name_lower);
+            assert!(cmp_ignore_case(&response.results[i - 1].name, &response.results[i].name)
+                != std::cmp::Ordering::Greater);
         }
     }
 
@@ -342,9 +365,10 @@ mod tests {
         };
 
         let response = engine.search(&request);
-        // 验证名称降序：name_lower 依次递减
+        // 验证名称降序：不区分大小写依次递减
         for i in 1..response.results.len() {
-            assert!(response.results[i - 1].name_lower >= response.results[i].name_lower);
+            assert!(cmp_ignore_case(&response.results[i - 1].name, &response.results[i].name)
+                != std::cmp::Ordering::Less);
         }
     }
 
@@ -369,7 +393,7 @@ mod tests {
         for i in 1..response.results.len() {
             assert!(response.results[i - 1].modified >= response.results[i].modified);
         }
-        assert_eq!(response.results[0].name, "report.pdf"); // modified=1700000400
+        assert_eq!(response.results[0].name.as_ref(), "report.pdf"); // modified=1700000400
     }
 
     #[test]
@@ -414,7 +438,30 @@ mod tests {
 
         let response = engine.search(&request);
         // 验证第一个是字母序最小的
-        assert_eq!(response.results[0].name, "report.pdf"); // 'r' 在英文中排最前
+        assert_eq!(response.results[0].name.as_ref(), "report.pdf"); // 'r' 在英文中排最前
+    }
+
+    #[test]
+    fn test_sort_none_keeps_index_order() {
+        // 重置排序时应保持索引原始顺序，不再强制按文件名排序
+        let index = create_test_index();
+        let engine = SearchEngine::new(index);
+
+        let request = SearchRequest {
+            query: String::new(),
+            ext_query: String::new(),
+            only_folders: false,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+
+        let response = engine.search(&request);
+        assert_eq!(response.total, 5);
+        assert_eq!(response.results[0].name.as_ref(), "福建交流报告.docx");
+        assert_eq!(response.results[4].name.as_ref(), "report.pdf");
     }
 
     #[test]
@@ -423,12 +470,9 @@ mod tests {
         let mut large_index = Vec::with_capacity(1_000_000);
         for i in 0..1_000_000 {
             large_index.push(FileEntry {
-                id: i,
-                name: format!("file_{}.txt", i),
-                name_lower: format!("file_{}.txt", i),
-                path: format!("C:\\test\\file_{}.txt", i),
-                parent_path: "C:\\test".to_string(),
-                extension: "txt".to_string(),
+                name: format!("file_{}.txt", i).into(),
+                path: format!("C:\\test\\file_{}.txt", i).into(),
+                extension: "txt".into(),
                 size: i * 1024,
                 modified: 1700000000 + i as i64,
                 is_dir: false,
@@ -462,12 +506,9 @@ mod tests {
         let mut index = Vec::new();
         for i in 0..10000 {
             index.push(FileEntry {
-                id: i,
-                name: format!("test_{}.dat", i),
-                name_lower: format!("test_{}.dat", i),
-                path: format!("D:\\data\\test_{}.dat", i),
-                parent_path: "D:\\data".to_string(),
-                extension: "dat".to_string(),
+                name: format!("test_{}.dat", i).into(),
+                path: format!("D:\\data\\test_{}.dat", i).into(),
+                extension: "dat".into(),
                 size: i * 512,
                 modified: 1700000000 + i as i64,
                 is_dir: false,
@@ -498,7 +539,6 @@ mod tests {
         
         // 验证结果顺序一致
         for (s, p) in response_serial.results.iter().zip(response_parallel.results.iter()) {
-            assert_eq!(s.id, p.id);
             assert_eq!(s.name, p.name);
         }
     }
@@ -566,23 +606,17 @@ mod tests {
         // 测试中文和 emoji 路径
         let index = vec![
             FileEntry {
-                id: 1,
-                name: "中文文件.txt".to_string(),
-                name_lower: "中文文件.txt".to_lowercase(),
-                path: "D:\\文档\\中文文件.txt".to_string(),
-                parent_path: "D:\\文档".to_string(),
-                extension: "txt".to_string(),
+                name: "中文文件.txt".into(),
+                path: "D:\\文档\\中文文件.txt".into(),
+                extension: "txt".into(),
                 size: 1024,
                 modified: 1700000000,
                 is_dir: false,
             },
             FileEntry {
-                id: 2,
-                name: "emoji😀.txt".to_string(),
-                name_lower: "emoji😀.txt".to_lowercase(),
-                path: "E:\\测试\\emoji😀.txt".to_string(),
-                parent_path: "E:\\测试".to_string(),
-                extension: "txt".to_string(),
+                name: "emoji😀.txt".into(),
+                path: "E:\\测试\\emoji😀.txt".into(),
+                extension: "txt".into(),
                 size: 2048,
                 modified: 1700000100,
                 is_dir: false,
@@ -604,7 +638,7 @@ mod tests {
         };
         let response = engine.search(&request);
         assert_eq!(response.total, 1);
-        assert_eq!(response.results[0].name, "中文文件.txt");
+        assert_eq!(response.results[0].name.as_ref(), "中文文件.txt");
         
         // 搜索 emoji
         let request = SearchRequest {
@@ -619,7 +653,7 @@ mod tests {
         };
         let response = engine.search(&request);
         assert_eq!(response.total, 1);
-        assert_eq!(response.results[0].name, "emoji😀.txt");
+        assert_eq!(response.results[0].name.as_ref(), "emoji😀.txt");
     }
 
     #[test]

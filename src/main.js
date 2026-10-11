@@ -10,12 +10,12 @@ try {
 
 // 状态管理
 let sortOrders = [{ field: 'Name', asc: true }];
-let searchTimeout = null;
 let selectedIndex = -1;
 let currentResults = [];
 
 // DOM 元素
 const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
 const extInput = document.getElementById('extInput');
 const extTypeSelect = document.getElementById('extTypeSelect');
 const settingsBtn = document.getElementById('settingsBtn');
@@ -90,10 +90,93 @@ function getFileIcon(entry) {
     return FILE_ICONS.default;
 }
 
+// ---- 结果列表列宽：可拖拽调整 + 持久化 ----
+// 顺序：图标 / 文件名 / 路径 / 修改时间 / 大小
+const DEFAULT_COL_WIDTHS = [40, 260, 360, 150, 110];
+const MIN_COL_WIDTH = 40;
+let colWidths = [...DEFAULT_COL_WIDTHS];
+const resultsContainer = document.querySelector('.results-container');
+const resultsTable = document.querySelector('.results-table');
+const colElements = resultsTable.querySelectorAll('colgroup col');
+
+// 应用列宽：列宽总和小于容器时由填充列铺满；超出时表格加宽，容器出现横向滚动条
+function applyColumnWidths() {
+    const sum = colWidths.reduce((a, b) => a + b, 0);
+    const tableWidth = Math.max(sum, resultsContainer.clientWidth);
+    colElements.forEach((col, i) => {
+        if (i < colWidths.length) {
+            col.style.width = colWidths[i] + 'px';
+        }
+    });
+    // 最后一列（填充列）吸收剩余空间
+    colElements[colWidths.length].style.width = (tableWidth - sum) + 'px';
+    resultsTable.style.width = tableWidth + 'px';
+}
+
+// 读取已保存的列宽
+async function loadColumnWidths() {
+    try {
+        const config = await invoke('get_config');
+        if (Array.isArray(config.column_widths) && config.column_widths.length === DEFAULT_COL_WIDTHS.length) {
+            colWidths = config.column_widths.map(w => Math.max(MIN_COL_WIDTH, Number(w) || 0));
+        }
+    } catch (e) {
+        console.error('加载列宽失败:', e);
+    }
+    applyColumnWidths();
+}
+
+// 保存列宽（防抖，避免拖拽过程中频繁写盘）
+let persistColTimer = null;
+function persistColumnWidths() {
+    if (persistColTimer) clearTimeout(persistColTimer);
+    persistColTimer = setTimeout(async () => {
+        try {
+            const config = await invoke('get_config');
+            config.column_widths = colWidths;
+            await invoke('save_settings', { config });
+        } catch (e) {
+            console.error('保存列宽失败:', e);
+        }
+    }, 400);
+}
+
+// 绑定列宽拖拽手柄
+function setupColumnResizers() {
+    document.querySelectorAll('.col-resizer').forEach(handle => {
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const index = parseInt(handle.dataset.col, 10);
+            const startX = e.clientX;
+            const startWidth = colWidths[index];
+            handle.classList.add('active');
+            document.body.classList.add('col-resizing');
+
+            const onMove = (ev) => {
+                colWidths[index] = Math.max(MIN_COL_WIDTH, Math.round(startWidth + ev.clientX - startX));
+                applyColumnWidths();
+            };
+            const onUp = () => {
+                handle.classList.remove('active');
+                document.body.classList.remove('col-resizing');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                persistColumnWidths();
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    });
+}
+
 // 初始化
 document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
+    setupColumnResizers();
     updateSortButtons();
+    await loadColumnWidths();
+    window.addEventListener('resize', applyColumnWidths);
     try {
         await updateIndexStatus();
     } catch (e) {
@@ -105,23 +188,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // 设置事件监听
 function setupEventListeners() {
-    // 搜索输入（防抖 300ms）
-    searchInput.addEventListener('input', () => {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
+    // 搜索触发：仅点击「搜索」按钮或按回车，输入时不再自动搜索
+    searchBtn.addEventListener('click', performSearch);
+    searchInput.addEventListener('keydown', handleKeyboard);
+    extInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
             performSearch();
-        }, 300);
+        }
     });
 
-    // 扩展名输入（防抖 300ms）
-    extInput.addEventListener('input', () => {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-            performSearch();
-        }, 300);
-    });
-
-    // 文件类型选择
+    // 文件类型选择：仅填充扩展名输入框，不自动触发搜索
     extTypeSelect.addEventListener('change', () => {
         const type = extTypeSelect.value;
         if (type === 'all' || type === 'folder') {
@@ -129,11 +206,7 @@ function setupEventListeners() {
         } else {
             extInput.value = TYPE_EXTENSIONS[type] || '';
         }
-        performSearch();
     });
-
-    // 键盘导航
-    searchInput.addEventListener('keydown', handleKeyboard);
 
     // 设置按钮
     settingsBtn.addEventListener('click', openSettings);
@@ -189,7 +262,8 @@ function handleSortClick(field) {
 
 // 重置排序
 function resetSort() {
-    sortOrders = [{ field: 'Name', asc: true }];
+    // 清空排序状态，不再强制按文件名排序
+    sortOrders = [];
     updateSortButtons();
     performSearch();
 }
@@ -204,9 +278,15 @@ function handleKeyboard(e) {
         e.preventDefault();
         selectedIndex = Math.max(selectedIndex - 1, 0);
         updateSelection();
-    } else if (e.key === 'Enter' && selectedIndex >= 0) {
+    } else if (e.key === 'Enter') {
         e.preventDefault();
-        openFolder(currentResults[selectedIndex].path);
+        if (selectedIndex >= 0) {
+            // 已有选中结果：回车打开该文件
+            openFolder(currentResults[selectedIndex].path);
+        } else {
+            // 未选中结果：回车触发搜索
+            performSearch();
+        }
     }
 }
 
@@ -235,7 +315,7 @@ async function performSearch() {
             query: searchInput.value.trim(),
             ext_query: extInput.value.trim(),
             only_folders: extTypeSelect.value === 'folder',
-            sort_by: sortOrders[0]?.field || 'Name',
+            sort_by: sortOrders[0]?.field || 'None',
             sort_asc: sortOrders[0]?.asc ?? true,
             sort_orders: sortOrdersForBackend,
             offset: 0,
@@ -263,14 +343,22 @@ function renderResults(response) {
         const icon = getFileIcon(entry);
         const size = entry.is_dir ? '' : formatSize(entry.size);
         const modified = entry.modified ? formatDateTime(entry.modified) : '';
+        // parent_path 字段已移除，展示时从完整路径推算父目录
+        const sepIndex = entry.path.lastIndexOf('\\');
+        const parentPath = sepIndex > 0 ? entry.path.slice(0, sepIndex) : entry.path;
 
         tr.innerHTML = `
             <td class="col-icon">${icon}</td>
             <td class="col-name"><span class="file-name">${escapeHtml(entry.name)}</span></td>
-            <td class="col-path">${escapeHtml(entry.parent_path)}</td>
+            <td class="col-path">${escapeHtml(parentPath)}</td>
             <td class="col-modified">${modified}</td>
             <td class="col-size">${size}</td>
+            <td class="col-filler"></td>
         `;
+
+        // 悬浮提示：显示完整文件名与完整路径（用 DOM 属性赋值，避免转义问题）
+        tr.querySelector('.col-name').title = entry.name;
+        tr.querySelector('.col-path').title = entry.path;
 
         tr.addEventListener('click', () => {
             selectedIndex = index;

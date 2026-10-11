@@ -15,17 +15,13 @@ impl IndexCache {
     pub fn create_table(&self) -> Result<(), String> {
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS file_index (
-                id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
-                name_lower TEXT NOT NULL,
                 path TEXT NOT NULL,
-                parent_path TEXT NOT NULL,
                 extension TEXT NOT NULL,
                 size INTEGER NOT NULL,
                 modified INTEGER NOT NULL,
                 is_dir INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_name_lower ON file_index(name_lower);
             CREATE INDEX IF NOT EXISTS idx_extension ON file_index(extension);"
         ).map_err(|e| e.to_string())?;
         Ok(())
@@ -37,19 +33,16 @@ impl IndexCache {
         
         {
             let mut stmt = tx.prepare(
-                "INSERT OR REPLACE INTO file_index 
-                 (id, name, name_lower, path, parent_path, extension, size, modified, is_dir)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+                "INSERT INTO file_index 
+                 (name, path, extension, size, modified, is_dir)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
             ).map_err(|e| e.to_string())?;
 
             for entry in entries {
                 stmt.execute(params![
-                    entry.id,
-                    entry.name,
-                    entry.name_lower,
-                    entry.path,
-                    entry.parent_path,
-                    entry.extension,
+                    entry.name.as_ref(),
+                    entry.path.as_ref(),
+                    entry.extension.as_ref(),
                     entry.size,
                     entry.modified,
                     entry.is_dir as i32,
@@ -63,21 +56,18 @@ impl IndexCache {
 
     pub fn load_all(&self) -> Result<Vec<FileEntry>, String> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, name_lower, path, parent_path, extension, size, modified, is_dir
+            "SELECT name, path, extension, size, modified, is_dir
              FROM file_index"
         ).map_err(|e| e.to_string())?;
 
         let entries = stmt.query_map([], |row| {
-            let is_dir_int: i32 = row.get(8)?;
+            let is_dir_int: i32 = row.get(5)?;
             Ok(FileEntry {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                name_lower: row.get(2)?,
-                path: row.get(3)?,
-                parent_path: row.get(4)?,
-                extension: row.get(5)?,
-                size: row.get(6)?,
-                modified: row.get(7)?,
+                name: row.get::<_, String>(0)?.into_boxed_str(),
+                path: row.get::<_, String>(1)?.into_boxed_str(),
+                extension: row.get::<_, String>(2)?.into_boxed_str(),
+                size: row.get(3)?,
+                modified: row.get(4)?,
                 is_dir: is_dir_int != 0,
             })
         }).map_err(|e| e.to_string())?
@@ -94,13 +84,11 @@ mod tests {
     use std::fs;
 
     fn create_test_entry(id: u64, name: &str) -> FileEntry {
+        let _ = id;
         FileEntry {
-            id,
-            name: name.to_string(),
-            name_lower: name.to_lowercase(),
-            path: format!("C:\\test\\{}", name),
-            parent_path: "C:\\test".to_string(),
-            extension: "txt".to_string(),
+            name: name.into(),
+            path: format!("C:\\test\\{}", name).into(),
+            extension: "txt".into(),
             size: 1024,
             modified: 1700000000,
             is_dir: false,
@@ -131,9 +119,9 @@ mod tests {
         // 加载数据
         let loaded = cache.load_all().expect("加载数据失败");
         assert_eq!(loaded.len(), 3, "应该加载 3 条记录");
-        assert_eq!(loaded[0].name, "file1.txt");
-        assert_eq!(loaded[1].name, "file2.txt");
-        assert_eq!(loaded[2].name, "file3.txt");
+        assert_eq!(loaded[0].name.as_ref(), "file1.txt");
+        assert_eq!(loaded[1].name.as_ref(), "file2.txt");
+        assert_eq!(loaded[2].name.as_ref(), "file3.txt");
 
         // 清理测试文件
         drop(cache);

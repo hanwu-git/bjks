@@ -13,6 +13,7 @@
             <div class="search-box">
                 <span class="search-icon">🔍</span>
                 <input type="text" id="searchInput" placeholder="输入关键词搜索文件... (支持多关键词，如: 福建 交流)" autofocus>
+                <button id="searchBtn" class="search-btn">搜索</button>
                 <button id="settingsBtn" class="icon-btn" title="设置">⚙️</button>
                 <button id="aboutBtn" class="icon-btn" title="关于">?</button>
             </div>
@@ -31,20 +32,7 @@
             </div>
         </header>
 
-        <!-- 状态栏 -->
-        <div class="status-bar">
-            <span class="status-left">
-                <span id="indexStatus">已索引 0 个文件</span>
-                <span id="scanProgress" class="scan-progress" style="display: none;">
-                    <span class="scan-progress-track">
-                        <span id="scanProgressFill" class="scan-progress-fill"></span>
-                    </span>
-                    <span id="scanProgressText" class="scan-progress-text"></span>
-                </span>
-            </span>
-            <span id="searchStatus">搜索耗时 0ms</span>
-        </div>
-        <!-- 排序栏 -->
+        <!-- 工具条：排序（左） + 索引状态与耗时（右） -->
         <div class="sort-bar">
             <span>排序:</span>
             <button class="sort-btn active" data-sort="Name" data-asc="true">名称 ▼</button>
@@ -52,18 +40,37 @@
             <button class="sort-btn" data-sort="Modified" data-asc="true">修改时间</button>
             <button id="resetSort" class="sort-reset" title="清除排序">重置</button>
             <span class="sort-tip">依次点击多列可组合排序</span>
+            <span class="toolbar-right">
+                <span id="indexStatus">已索引 0 个文件</span>
+                <span id="scanProgress" class="scan-progress" style="display: none;">
+                    <span class="scan-progress-track">
+                        <span id="scanProgressFill" class="scan-progress-fill"></span>
+                    </span>
+                    <span id="scanProgressText" class="scan-progress-text"></span>
+                </span>
+                <span id="searchStatus">搜索耗时 0ms</span>
+            </span>
         </div>
 
         <!-- 结果列表 -->
         <div class="results-container">
             <table class="results-table">
+                <colgroup>
+                    <col class="col-icon">
+                    <col class="col-name">
+                    <col class="col-path">
+                    <col class="col-modified">
+                    <col class="col-size">
+                    <col class="col-filler">
+                </colgroup>
                 <thead>
                     <tr>
                         <th class="col-icon"></th>
-                        <th class="col-name">文件名</th>
-                        <th class="col-path">路径</th>
-                        <th class="col-modified">修改时间</th>
-                        <th class="col-size">大小</th>
+                        <th class="col-name">文件名<span class="col-resizer" data-col="1"></span></th>
+                        <th class="col-path">路径<span class="col-resizer" data-col="2"></span></th>
+                        <th class="col-modified">修改时间<span class="col-resizer" data-col="3"></span></th>
+                        <th class="col-size">大小<span class="col-resizer" data-col="4"></span></th>
+                        <th class="col-filler"></th>
                     </tr>
                 </thead>
                 <tbody id="resultsBody">

@@ -2,12 +2,9 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileEntry {
-    pub id: u64,              // 唯一标识（MFT Record Number 或自增）
-    pub name: String,         // 文件名（含扩展名）
-    pub name_lower: String,   // 小写文件名（预计算，加速搜索）
-    pub path: String,         // 完整路径
-    pub parent_path: String,  // 父目录路径
-    pub extension: String,    // 扩展名（不含点号，小写）
+    pub name: Box<str>,       // 文件名（含扩展名）
+    pub path: Box<str>,       // 完整路径
+    pub extension: Box<str>,  // 扩展名（不含点号，小写）
     pub size: u64,            // 文件大小（字节）
     pub modified: i64,        // 修改时间（Unix 时间戳）
     pub is_dir: bool,         // 是否为目录
@@ -26,6 +23,8 @@ pub struct AppConfig {
     pub window_height: u32,
     #[serde(default = "default_close_action")] // 关闭窗口行为：minimize（最小化到托盘）/ exit（直接退出）
     pub close_action: String,
+    #[serde(default)]                       // 列表列宽（像素，顺序：图标/文件名/路径/修改时间/大小；空表示使用默认）
+    pub column_widths: Vec<u32>,
 }
 
 /// 关闭窗口的默认行为：最小化到托盘，兼容旧配置文件缺字段的情况
@@ -58,6 +57,7 @@ impl Default for AppConfig {
             window_width: 1200,
             window_height: 800,
             close_action: default_close_action(),
+            column_widths: vec![],
         }
     }
 }
@@ -83,6 +83,7 @@ pub struct SearchRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SortField {
+    None,
     Name,
     Size,
     Modified,

@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const CACHE_FILE: &str = "file_index.db";
+const CACHE_FILE: &str = "file_index_v2.db";
 const CACHE_EXPIRY_HOURS: u64 = 24;
 
 /// 获取缓存文件路径
@@ -147,12 +147,7 @@ fn scan_volumes_with_progress(
             scan_volume_fast_with_progress(&vol.drive_letter, config, &on_progress);
         scanned.set(scanned.get() + entries.len());
 
-        // 重新编号，保证跨卷 ID 全局唯一
-        let start_id = all.len() as u64;
-        for (idx, entry) in entries.iter_mut().enumerate() {
-            entry.id = start_id + idx as u64;
-        }
-        all.extend(entries);
+        all.append(&mut entries);
 
         let mut p = progress.lock().unwrap();
         p.completed_volumes += 1;

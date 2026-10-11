@@ -1,6 +1,6 @@
 [package]
 name = "BJKS"
-version = "1.0.3"
+version = "1.0.7"
 description = "本机快搜 - Windows 本地文件快速搜索工具"
 authors = ["hanwu-git"]
 edition = "2021"
@@ -13,9 +13,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
-glob = "0.3"
 rayon = "1"
-chrono = "0.4"
 walkdir = "2"
 dirs = "5"
 
@@ -24,7 +22,7 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [profile.release]
-opt-level = "s"          # 优化体积
+opt-level = "z"          # 最小体积优先
 lto = true               # 链接时优化
 codegen-units = 1        # 单代码生成单元，进一步优化
 panic = "abort"          # 移除 panic 展开代码

@@ -113,24 +113,7 @@ body {
     border-color: #0078d4;
 }
 
-/* 状态栏 */
-.status-bar {
-    background: #fff;
-    padding: 8px 20px;
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-    color: #666;
-    border-bottom: 1px solid #e0e0e0;
-}
-
-.status-left {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-}
-
+/* 索引状态区（位于工具条右侧） */
 .scan-progress {
     display: inline-flex;
     align-items: center;
@@ -170,9 +153,6 @@ body {
     align-items: center;
     gap: 8px;
     border-bottom: 1px solid #e0e0e0;
-}
-
-.sort-bar span {
     font-size: 13px;
     color: #666;
 }
@@ -213,18 +193,26 @@ body {
 .sort-tip {
     font-size: 11px;
     color: #999;
+}
+
+/* 工具条右侧：索引状态、扫描进度与搜索耗时 */
+.toolbar-right {
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    white-space: nowrap;
 }
 
 /* 结果容器 */
 .results-container {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;              /* 列宽超出窗口时出现横向滚动条 */
     background: #fff;
 }
 
 .results-table {
-    width: 100%;
+    table-layout: fixed;         /* 固定布局：列宽由 colgroup 控制，长内容以省略号截断 */
     border-collapse: collapse;
 }
 
@@ -236,9 +224,18 @@ body {
     font-size: 12px;
     color: #666;
     border-bottom: 1px solid #e0e0e0;
+    border-right: 2px solid #0078d4;   /* 表头列之间常显 2px 蓝色竖线 */
     position: sticky;
     top: 0;
     z-index: 1;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* 末列（大小）右侧为空白填充列，不画竖线 */
+.results-table th.col-size,
+.results-table th.col-filler {
+    border-right: none;
 }
 
 .results-table td {
@@ -246,6 +243,14 @@ body {
     font-size: 13px;
     border-bottom: 1px solid #f0f0f0;
     vertical-align: middle;
+    white-space: nowrap;         /* 不自动折行 */
+    overflow: hidden;
+    text-overflow: ellipsis;     /* 超出列宽显示省略号，完整内容用悬浮提示查看 */
+}
+
+/* 相邻行明暗交替（斑马纹） */
+.results-table tbody tr:nth-child(even) {
+    background: #f6f7f9;
 }
 
 .results-table tr:hover {
@@ -256,8 +261,29 @@ body {
     background: #e3f2fd;
 }
 
+/* 列宽拖拽手柄 */
+.col-resizer {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 2;
+}
+
+.col-resizer:hover,
+.col-resizer.active {
+    background: #0078d4;
+    opacity: 0.35;
+}
+
+body.col-resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
 .col-icon {
-    width: 24px;
     text-align: center;
     padding: 2px 4px;
 }
@@ -267,30 +293,26 @@ body {
     margin: 0 auto;
 }
 
-.col-name {
-    width: 35%;
-}
-
 .file-name {
     color: #333;
 }
 
 .col-path {
-    width: 42%;
     color: #666;
 }
 
 .col-modified {
-    width: 13%;
     color: #666;
     font-size: 12px;
-    white-space: nowrap;
 }
 
 .col-size {
-    width: 10%;
     text-align: right;
     color: #666;
+}
+
+.col-filler {
+    padding: 0;
 }
 
 /* 分页栏 */
@@ -435,6 +457,21 @@ body {
     font-size: 12px;
     color: #999;
     line-height: 1.5;
+}
+
+.search-btn {
+    padding: 6px 16px;
+    margin-left: 8px;
+    border: none;
+    border-radius: 4px;
+    background: #0078d4;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.search-btn:hover {
+    background: #0067b8;
 }
 
 .close-action-options {

@@ -326,10 +326,55 @@ body.col-resizing {
 .pagination-bar {
     background: #fff;
     padding: 8px 20px;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
     font-size: 13px;
     color: #666;
     border-top: 1px solid #e0e0e0;
+}
+
+.pagination-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.page-btn {
+    background: transparent;
+    border: 1px solid #ddd;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #666;
+}
+
+.page-btn:hover {
+    background: #f0f0f0;
+}
+
+.page-jump {
+    width: 56px;
+    height: 24px;
+    padding: 0 6px;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+    font-size: 12px;
+    text-align: center;
+    outline: none;
+}
+
+.page-jump:focus {
+    border-color: #0078d4;
+}
+
+/* 隐藏数字输入框的上下箭头 */
+.page-jump::-webkit-outer-spin-button,
+.page-jump::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 /* 右键菜单 */

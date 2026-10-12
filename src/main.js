@@ -13,6 +13,14 @@ let sortOrders = [{ field: 'Name', asc: true }];
 let selectedIndex = -1;
 let currentResults = [];
 
+// 分页状态：每页 PAGE_SIZE 条；滚动到底自动追加下一页，累计不超过 MAX_ACCUM_PAGES 页（避免 DOM 过大卡顿）
+const PAGE_SIZE = 1000;
+const MAX_ACCUM_PAGES = 5;
+let currentPage = 1;
+let totalPages = 1;
+let totalResults = 0;
+let isLoadingPage = false;
+
 // DOM 元素
 const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
@@ -28,6 +36,11 @@ const driveList = document.getElementById('driveList');
 const searchStatus = document.getElementById('searchStatus');
 const resultsBody = document.getElementById('resultsBody');
 const paginationInfo = document.getElementById('paginationInfo');
+const totalPagesText = document.getElementById('totalPagesText');
+const pageJumpInput = document.getElementById('pageJumpInput');
+const prevPageBtn = document.getElementById('prevPageBtn');
+const nextPageBtn = document.getElementById('nextPageBtn');
+const jumpPageBtn = document.getElementById('jumpPageBtn');
 const contextMenu = document.getElementById('contextMenu');
 const settingsPanel = document.getElementById('settingsPanel');
 const closeSettings = document.getElementById('closeSettings');
@@ -239,6 +252,27 @@ function setupEventListeners() {
         item.addEventListener('click', handleMenuAction);
     });
 
+    // 分页：上一页/下一页/跳转为替换式渲染；滚动到底自动追加下一页
+    prevPageBtn.addEventListener('click', () => fetchPage(currentPage - 1, 'replace'));
+    nextPageBtn.addEventListener('click', () => fetchPage(currentPage + 1, 'replace'));
+    jumpPageBtn.addEventListener('click', doJumpPage);
+    pageJumpInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            doJumpPage();
+        }
+    });
+    resultsContainer.addEventListener('scroll', () => {
+        if (isLoadingPage) return;
+        const el = resultsContainer;
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 30) {
+            // 滚动到底：自动追加下一页（累计最多 MAX_ACCUM_PAGES 页，之后请用按钮/跳转，避免 DOM 过大卡顿）
+            if (currentPage < totalPages && currentPage < MAX_ACCUM_PAGES) {
+                fetchPage(currentPage + 1, 'append');
+            }
+        }
+    });
+
     // 添加屏蔽规则
     document.getElementById('addExcludePath').addEventListener('click', () => addExcludeItem('path'));
     document.getElementById('addExcludePattern').addEventListener('click', () => addExcludeItem('pattern'));
@@ -304,74 +338,131 @@ function updateSelection() {
     });
 }
 
-// 执行搜索
+// 构造搜索请求：关键词、过滤、排序保持一致，仅分页偏移不同（保证翻页时排序稳定）
+function buildRequest(offset) {
+    return {
+        query: searchInput.value.trim(),
+        ext_query: extInput.value.trim(),
+        only_folders: extTypeSelect.value === 'folder',
+        sort_by: sortOrders[0]?.field || 'None',
+        sort_asc: sortOrders[0]?.asc ?? true,
+        sort_orders: sortOrders.map(o => ({ field: o.field, asc: o.asc })),
+        offset,
+        limit: PAGE_SIZE
+    };
+}
+
+// 执行搜索：从第 1 页开始，重置分页状态
 async function performSearch() {
     try {
-        const sortOrdersForBackend = sortOrders.map(o => ({
-            field: o.field,
-            asc: o.asc
-        }));
-
-        const request = {
-            query: searchInput.value.trim(),
-            ext_query: extInput.value.trim(),
-            only_folders: extTypeSelect.value === 'folder',
-            sort_by: sortOrders[0]?.field || 'None',
-            sort_asc: sortOrders[0]?.asc ?? true,
-            sort_orders: sortOrdersForBackend,
-            offset: 0,
-            limit: 1000
-        };
-
-        const response = await invoke('search', { request });
+        const response = await invoke('search', { request: buildRequest(0) });
+        totalResults = response.total;
+        totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
+        currentPage = 1;
         currentResults = response.results;
 
-        renderResults(response);
+        renderRows(response.results, 0);
+        selectedIndex = -1;
+        updatePaginationInfo();
         searchStatus.textContent = `搜索耗时 ${response.query_time_ms}ms`;
     } catch (error) {
         console.error('搜索失败:', error);
     }
 }
 
-// 渲染结果
-function renderResults(response) {
+// 获取指定页：mode=replace 替换当前列表（按钮/跳转），mode=append 追加到列表末尾（滚动加载）
+async function fetchPage(page, mode) {
+    if (isLoadingPage || page < 1 || page > totalPages) return;
+    isLoadingPage = true;
+    try {
+        const response = await invoke('search', { request: buildRequest((page - 1) * PAGE_SIZE) });
+        if (mode === 'append') {
+            appendRows(response.results);
+            currentResults = currentResults.concat(response.results);
+        } else {
+            currentResults = response.results;
+            renderRows(response.results, (page - 1) * PAGE_SIZE);
+            selectedIndex = -1;
+            resultsContainer.scrollTop = 0;
+        }
+        currentPage = page;
+        updatePaginationInfo();
+    } catch (error) {
+        console.error(`加载第 ${page} 页失败:`, error);
+    } finally {
+        isLoadingPage = false;
+    }
+}
+
+// 跳转到输入的页码（替换式渲染）
+function doJumpPage() {
+    const page = parseInt(pageJumpInput.value, 10);
+    if (!isNaN(page) && page >= 1 && page <= totalPages) {
+        fetchPage(page, 'replace');
+    }
+}
+
+// 渲染整表（startIndex 为全局序号基准，保证跨页序号连续）
+function renderRows(entries, startIndex) {
     resultsBody.innerHTML = '';
+    entries.forEach((entry, i) => {
+        resultsBody.appendChild(createRow(entry, startIndex + i));
+    });
+}
 
-    response.results.forEach((entry, index) => {
-        const tr = document.createElement('tr');
-        tr.dataset.index = index;
+// 追加下一页内容（滚动加载）
+function appendRows(entries) {
+    const startIndex = currentResults.length;
+    entries.forEach((entry, i) => {
+        resultsBody.appendChild(createRow(entry, startIndex + i));
+    });
+}
 
-        const icon = getFileIcon(entry);
-        const size = entry.is_dir ? '' : formatSize(entry.size);
-        const modified = entry.modified ? formatDateTime(entry.modified) : '';
-        // parent_path 字段已移除，展示时从完整路径推算父目录
-        const sepIndex = entry.path.lastIndexOf('\\');
-        const parentPath = sepIndex > 0 ? entry.path.slice(0, sepIndex) : entry.path;
+// 构建单行
+function createRow(entry, globalIndex) {
+    const tr = document.createElement('tr');
+    tr.dataset.index = globalIndex;
 
-        tr.innerHTML = `
-            <td class="col-index">${index + 1}</td>
-            <td class="col-icon">${icon}</td>
-            <td class="col-name"><span class="file-name">${escapeHtml(entry.name)}</span></td>
-            <td class="col-path">${escapeHtml(parentPath)}</td>
-            <td class="col-modified">${modified}</td>
-            <td class="col-size">${size}</td>
-            <td class="col-filler"></td>
-        `;
+    const icon = getFileIcon(entry);
+    const size = entry.is_dir ? '' : formatSize(entry.size);
+    const modified = entry.modified ? formatDateTime(entry.modified) : '';
+    // parent_path 字段已移除，展示时从完整路径推算父目录
+    const sepIndex = entry.path.lastIndexOf('\\');
+    const parentPath = sepIndex > 0 ? entry.path.slice(0, sepIndex) : entry.path;
 
-        // 悬浮提示：显示完整文件名与完整路径（用 DOM 属性赋值，避免转义问题）
-        tr.querySelector('.col-name').title = entry.name;
-        tr.querySelector('.col-path').title = entry.path;
+    tr.innerHTML = `
+        <td class="col-index">${globalIndex + 1}</td>
+        <td class="col-icon">${icon}</td>
+        <td class="col-name"><span class="file-name">${escapeHtml(entry.name)}</span></td>
+        <td class="col-path">${escapeHtml(parentPath)}</td>
+        <td class="col-modified">${modified}</td>
+        <td class="col-size">${size}</td>
+        <td class="col-filler"></td>
+    `;
 
-        tr.addEventListener('click', () => {
-            selectedIndex = index;
-            updateSelection();
-        });
+    // 悬浮提示：显示完整文件名与完整路径（用 DOM 属性赋值，避免转义问题）
+    tr.querySelector('.col-name').title = entry.name;
+    tr.querySelector('.col-path').title = entry.path;
 
-        resultsBody.appendChild(tr);
+    tr.addEventListener('click', () => {
+        selectedIndex = globalIndex;
+        updateSelection();
     });
 
-    paginationInfo.textContent = `共 ${response.total} 条结果 | 第 1/1 页`;
-    selectedIndex = -1;
+    return tr;
+}
+
+// 更新分页栏显示
+function updatePaginationInfo() {
+    totalPagesText.textContent = totalPages;
+    pageJumpInput.max = totalPages;
+    if (totalResults === 0) {
+        paginationInfo.textContent = '无匹配结果';
+        return;
+    }
+    const from = (currentPage - 1) * PAGE_SIZE + 1;
+    const to = Math.min(currentPage * PAGE_SIZE, totalResults);
+    paginationInfo.textContent = `共 ${totalResults} 条结果（当前显示 ${from}–${to} 条）`;
 }
 
 // 更新索引状态

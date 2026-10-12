@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>本机快搜 v1.0.10</title>
+    <title>本机快搜 v1.0.11</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -83,6 +83,14 @@
         <!-- 分页栏 -->
         <div class="pagination-bar">
             <span id="paginationInfo">共 0 条结果</span>
+            <div class="pagination-controls">
+                <button id="prevPageBtn" class="page-btn" title="上一页">上一页</button>
+                <span>第</span>
+                <input type="number" id="pageJumpInput" class="page-jump" min="1" value="1">
+                <span>/ <span id="totalPagesText">1</span> 页</span>
+                <button id="nextPageBtn" class="page-btn" title="下一页">下一页</button>
+                <button id="jumpPageBtn" class="page-btn" title="跳转到指定页">跳转</button>
+            </div>
         </div>
 
         <!-- 右键菜单 -->

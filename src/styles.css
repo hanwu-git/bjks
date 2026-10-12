@@ -172,17 +172,20 @@ body {
     border-color: #0078d4;
 }
 
+/* 重置排序：与排序按钮一致的按钮样式 */
 .sort-reset {
     background: transparent;
-    border: none;
-    color: #888;
-    font-size: 12px;
+    border: 1px solid #ddd;
+    padding: 4px 12px;
+    border-radius: 4px;
     cursor: pointer;
-    padding: 4px 8px;
+    font-size: 13px;
+    color: #666;
     margin-left: 4px;
 }
 
 .sort-reset:hover {
+    background: #f0f0f0;
     color: #d32f2f;
 }
 
@@ -277,6 +280,14 @@ body {
 body.col-resizing {
     cursor: col-resize;
     user-select: none;
+}
+
+/* 序号列：固定窄列，居中显示 */
+.col-index {
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    padding: 2px 4px;
 }
 
 .col-icon {

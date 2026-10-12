@@ -92,8 +92,8 @@ function getFileIcon(entry) {
 }
 
 // ---- 结果列表列宽：可拖拽调整 + 持久化 ----
-// 顺序：图标 / 文件名 / 路径 / 修改时间 / 大小
-const DEFAULT_COL_WIDTHS = [40, 260, 360, 150, 110];
+// 顺序：序号 / 图标 / 文件名 / 路径 / 修改时间 / 大小
+const DEFAULT_COL_WIDTHS = [50, 40, 260, 360, 150, 110];
 const MIN_COL_WIDTH = 40;
 let colWidths = [...DEFAULT_COL_WIDTHS];
 const resultsContainer = document.querySelector('.results-container');
@@ -349,6 +349,7 @@ function renderResults(response) {
         const parentPath = sepIndex > 0 ? entry.path.slice(0, sepIndex) : entry.path;
 
         tr.innerHTML = `
+            <td class="col-index">${index + 1}</td>
             <td class="col-icon">${icon}</td>
             <td class="col-name"><span class="file-name">${escapeHtml(entry.name)}</span></td>
             <td class="col-path">${escapeHtml(parentPath)}</td>

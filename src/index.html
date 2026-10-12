@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>本机快搜 v1.0.9</title>
+    <title>本机快搜 v1.0.10</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -37,7 +37,7 @@
             <button class="sort-btn" data-sort="Path" data-asc="true">路径</button>
             <button class="sort-btn" data-sort="Size" data-asc="true">大小</button>
             <button class="sort-btn" data-sort="Modified" data-asc="true">修改时间</button>
-            <button id="resetSort" class="sort-reset" title="清除排序">重置</button>
+            <button id="resetSort" class="sort-reset" title="清除所有排序">重置排序</button>
             <span class="sort-tip">依次点击多列可组合排序</span>
             <span class="toolbar-right">
                 <span id="indexStatus">已索引 0 个文件</span>
@@ -55,6 +55,7 @@
         <div class="results-container">
             <table class="results-table">
                 <colgroup>
+                    <col class="col-index">
                     <col class="col-icon">
                     <col class="col-name">
                     <col class="col-path">
@@ -64,11 +65,12 @@
                 </colgroup>
                 <thead>
                     <tr>
+                        <th class="col-index">序号</th>
                         <th class="col-icon"></th>
-                        <th class="col-name">文件名<span class="col-resizer" data-col="1"></span></th>
-                        <th class="col-path">路径<span class="col-resizer" data-col="2"></span></th>
-                        <th class="col-modified">修改时间<span class="col-resizer" data-col="3"></span></th>
-                        <th class="col-size">大小<span class="col-resizer" data-col="4"></span></th>
+                        <th class="col-name">文件名<span class="col-resizer" data-col="2"></span></th>
+                        <th class="col-path">路径<span class="col-resizer" data-col="3"></span></th>
+                        <th class="col-modified">修改时间<span class="col-resizer" data-col="4"></span></th>
+                        <th class="col-size">大小<span class="col-resizer" data-col="5"></span></th>
                         <th class="col-filler"></th>
                     </tr>
                 </thead>

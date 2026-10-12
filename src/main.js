@@ -234,7 +234,7 @@ function setupEventListeners() {
     settingsBtn.addEventListener('click', openSettings);
     closeSettings.addEventListener('click', closeSettingsPanel);
     saveSettings.addEventListener('click', saveSettingsHandler);
-    rescanBtn.addEventListener('click', rescanHandler);
+    rescanBtn.addEventListener('click', () => rescanHandler());
 
     // 配色切换：单选变化即时预览
     document.querySelectorAll('input[name="uiTheme"]').forEach(radio => {
@@ -462,6 +462,21 @@ function createRow(entry, globalIndex) {
     tr.addEventListener('click', () => {
         selectedIndex = globalIndex;
         updateSelection();
+    });
+
+    // 双击：文件用系统默认程序打开，目录用资源管理器打开该文件夹
+    tr.addEventListener('dblclick', async () => {
+        selectedIndex = globalIndex;
+        updateSelection();
+        try {
+            if (entry.is_dir) {
+                await invoke('open_folder', { path: entry.path });
+            } else {
+                await invoke('open_file', { path: entry.path });
+            }
+        } catch (error) {
+            console.error('打开失败:', error);
+        }
     });
 
     return tr;
@@ -784,23 +799,37 @@ async function saveSettingsHandler() {
         }
 
         const config = await invoke('get_config');
+
+        // 判断盘符勾选是否发生变化（规范化后比较）
+        const prevDrives = (config.scan_drives || []).map(normalizeDriveLabel).sort();
+        const newDrives = checkedDrives.map(normalizeDriveLabel).sort();
+        const drivesChanged = JSON.stringify(prevDrives) !== JSON.stringify(newDrives);
+
         config.scan_drives = checkedDrives;
         config.close_action = getCloseAction();
         config.theme = getTheme();
         await invoke('save_settings', { config });
         themeBeforeSettings = config.theme;   // 保存后更新基准，避免关闭面板时被还原
-        alert('设置已保存，点击「重建索引」后生效');
         closeSettingsPanel();
+
+        // 盘符变更后立即重建索引，让勾选马上生效
+        if (drivesChanged) {
+            if (confirm('索引盘符已变更，是否立即重建索引使新盘符生效？')) {
+                await rescanHandler(true);
+            }
+        }
     } catch (error) {
         console.error('保存设置失败:', error);
         alert('保存设置失败');
     }
 }
 
-// 重建索引：清空现有索引后重新扫描
-async function rescanHandler() {
-    const confirmed = confirm('重建索引将清空现有索引并重新扫描磁盘，可能需要几分钟，确定继续吗？');
-    if (!confirmed) return;
+// 重建索引：清空现有索引后重新扫描（skipConfirm 为 true 时不弹确认框，用于保存设置后的自动触发）
+async function rescanHandler(skipConfirm = false) {
+    if (!skipConfirm) {
+        const confirmed = confirm('重建索引将清空现有索引并重新扫描磁盘，可能需要几分钟，确定继续吗？');
+        if (!confirmed) return;
+    }
 
     rescanBtn.disabled = true;
     try {

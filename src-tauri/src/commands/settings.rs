@@ -101,8 +101,9 @@ pub fn list_volumes() -> Vec<String> {
 
 #[tauri::command]
 pub fn open_file(path: String) -> bool {
-    Command::new("cmd")
-        .args(&["/C", "start", "", &path])
+    // 直接交给 explorer 打开：按系统默认关联程序打开文件，且不会像 cmd start 一样闪黑窗
+    Command::new("explorer")
+        .arg(&path)
         .spawn()
         .is_ok()
 }

@@ -53,7 +53,7 @@ fn main() {
 
     // 3. 加载缓存（优先让窗口快速显示），需要时后台刷新
     app_log("开始加载缓存或全量扫描...");
-    let (entries, needs_refresh) = load_or_scan();
+    let (entries, needs_refresh) = load_or_scan(&config.scan_drives);
     let entry_count = entries.len();
     app_log(&format!("初始索引包含 {} 个文件", entry_count));
 

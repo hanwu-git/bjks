@@ -53,7 +53,7 @@ pub fn enumerate_volumes(scan_drives: &[String]) -> Vec<VolumeInfo> {
 }
 
 /// 规范化盘符输入：接受 "C"、"C:"、"C:\" 等形式，统一为 "C:"
-fn normalize_drive(input: &str) -> String {
+pub fn normalize_drive(input: &str) -> String {
     let letter = input
         .trim()
         .trim_end_matches(|c| c == '\\' || c == '/')

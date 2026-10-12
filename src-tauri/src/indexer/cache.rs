@@ -22,15 +22,41 @@ impl IndexCache {
                 modified INTEGER NOT NULL,
                 is_dir INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_extension ON file_index(extension);"
+            CREATE INDEX IF NOT EXISTS idx_extension ON file_index(extension);
+            CREATE TABLE IF NOT EXISTS cache_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );"
         ).map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// 写入缓存元数据（key 存在则覆盖），如记录本次索引使用的盘符
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<(), String> {
+        self.conn.execute(
+            "INSERT INTO cache_meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 读取缓存元数据
+    pub fn get_meta(&self, key: &str) -> Option<String> {
+        self.conn
+            .query_row("SELECT value FROM cache_meta WHERE key = ?1", params![key], |row| row.get(0))
+            .ok()
     }
 
     pub fn save_entries(&self, entries: &[FileEntry]) -> Result<(), String> {
         let tx = self.conn.unchecked_transaction()
             .map_err(|e| e.to_string())?;
-        
+
+        // 先清空旧记录再写入，保证保存操作幂等：
+        // 否则缓存过期后台刷新时会向旧表追加，索引整体翻倍，搜索结果出现成对重复
+        tx.execute("DELETE FROM file_index", params![])
+            .map_err(|e| e.to_string())?;
+
         {
             let mut stmt = tx.prepare(
                 "INSERT INTO file_index 
@@ -124,6 +150,30 @@ mod tests {
         assert_eq!(loaded[2].name.as_ref(), "file3.txt");
 
         // 清理测试文件
+        drop(cache);
+        let _ = fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn test_save_twice_no_duplicates() {
+        let db_path = "test_cache_twice.db";
+        let _ = fs::remove_file(db_path);
+
+        let cache = IndexCache::open(db_path).expect("打开数据库失败");
+        cache.create_table().expect("创建表失败");
+
+        let entries = vec![
+            create_test_entry(1, "file1.txt"),
+            create_test_entry(2, "file2.txt"),
+        ];
+
+        // 模拟缓存过期后台刷新：同一张表连续保存两次，第二次应整体替换而非追加
+        cache.save_entries(&entries).expect("第一次保存失败");
+        cache.save_entries(&entries).expect("第二次保存失败");
+
+        let loaded = cache.load_all().expect("加载数据失败");
+        assert_eq!(loaded.len(), 2, "重复保存后不应出现翻倍的记录");
+
         drop(cache);
         let _ = fs::remove_file(db_path);
     }

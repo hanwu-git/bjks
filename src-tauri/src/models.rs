@@ -25,6 +25,13 @@ pub struct AppConfig {
     pub close_action: String,
     #[serde(default)]                       // 列表列宽（像素，顺序：图标/文件名/路径/修改时间/大小；空表示使用默认）
     pub column_widths: Vec<u32>,
+    #[serde(default = "default_theme")]     // 界面配色：a 青岚（浅色）/ b 暗夜（深色）/ c 暖沙（暖色）
+    pub theme: String,
+}
+
+/// 界面配色默认值：方案 A 青岚，兼容旧配置文件缺字段的情况
+fn default_theme() -> String {
+    "a".to_string()
 }
 
 /// 关闭窗口的默认行为：最小化到托盘，兼容旧配置文件缺字段的情况
@@ -58,6 +65,7 @@ impl Default for AppConfig {
             window_height: 800,
             close_action: default_close_action(),
             column_widths: vec![],
+            theme: default_theme(),
         }
     }
 }

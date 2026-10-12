@@ -191,6 +191,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateSortButtons();
     await loadColumnWidths();
     window.addEventListener('resize', applyColumnWidths);
+    // 应用已保存的界面配色
+    try {
+        const cfg = await invoke('get_config');
+        applyTheme(cfg.theme);
+        themeBeforeSettings = THEMES.includes(cfg.theme) ? cfg.theme : 'a';
+    } catch (e) {
+        console.error('加载配色失败:', e);
+    }
     try {
         await updateIndexStatus();
     } catch (e) {
@@ -227,6 +235,13 @@ function setupEventListeners() {
     closeSettings.addEventListener('click', closeSettingsPanel);
     saveSettings.addEventListener('click', saveSettingsHandler);
     rescanBtn.addEventListener('click', rescanHandler);
+
+    // 配色切换：单选变化即时预览
+    document.querySelectorAll('input[name="uiTheme"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            if (radio.checked) applyTheme(radio.value);
+        });
+    });
 
     // 关于弹窗
     aboutBtn.addEventListener('click', openAbout);
@@ -605,9 +620,10 @@ async function openSettings() {
     await loadSettings();
 }
 
-// 关闭设置面板
+// 关闭设置面板（未保存时还原打开前的配色预览）
 function closeSettingsPanel() {
     settingsPanel.style.display = 'none';
+    applyTheme(themeBeforeSettings);
 }
 
 // 加载设置
@@ -620,6 +636,8 @@ async function loadSettings() {
         renderExcludeList('excludeExtensionsList', config.excluded_extensions, 'extension');
         await renderDriveOptions(config.scan_drives);
         renderCloseAction(config.close_action);
+        renderTheme(config.theme);
+        themeBeforeSettings = THEMES.includes(config.theme) ? config.theme : 'a';
     } catch (error) {
         console.error('加载设置失败:', error);
     }
@@ -637,6 +655,31 @@ function renderCloseAction(action) {
 function getCloseAction() {
     const checked = document.querySelector('input[name="closeAction"]:checked');
     return checked ? checked.value : 'minimize';
+}
+
+// ---- 界面配色 ----
+const THEMES = ['a', 'b', 'c'];
+let themeBeforeSettings = 'a';   // 打开设置面板时的配色，关闭未保存时还原
+
+// 应用配色：body 挂载对应主题 class（a 青岚 / b 暗夜 / c 暖沙）
+function applyTheme(theme) {
+    const t = THEMES.includes(theme) ? theme : 'a';
+    document.body.classList.remove('theme-a', 'theme-b', 'theme-c');
+    document.body.classList.add('theme-' + t);
+}
+
+// 渲染设置面板中的配色选项
+function renderTheme(theme) {
+    const value = THEMES.includes(theme) ? theme : 'a';
+    document.querySelectorAll('input[name="uiTheme"]').forEach(radio => {
+        radio.checked = radio.value === value;
+    });
+}
+
+// 读取当前选中的配色
+function getTheme() {
+    const checked = document.querySelector('input[name="uiTheme"]:checked');
+    return checked ? checked.value : 'a';
 }
 
 // 规范化盘符显示，如 "C" / "C:\" -> "C:"
@@ -743,7 +786,9 @@ async function saveSettingsHandler() {
         const config = await invoke('get_config');
         config.scan_drives = checkedDrives;
         config.close_action = getCloseAction();
+        config.theme = getTheme();
         await invoke('save_settings', { config });
+        themeBeforeSettings = config.theme;   // 保存后更新基准，避免关闭面板时被还原
         alert('设置已保存，点击「重建索引」后生效');
         closeSettingsPanel();
     } catch (error) {

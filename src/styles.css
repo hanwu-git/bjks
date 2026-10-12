@@ -4,10 +4,88 @@
     box-sizing: border-box;
 }
 
+/* ============ 配色变量：方案 A 青岚（默认） ============ */
+:root {
+    --bg: #f8fafc;              /* 窗口底 */
+    --panel: #ffffff;           /* 面板/栏位底 */
+    --panel-alt: #eef2f7;       /* 表头/次级面板底 */
+    --muted-bg: #f1f3f7;        /* 列表项、次要按钮悬停底 */
+    --input-bg: #ffffff;        /* 输入框底 */
+    --text: #1e293b;            /* 主文字 */
+    --text-sec: #64748b;        /* 次级文字 */
+    --text-faint: #94a3b8;      /* 弱文字 */
+    --primary: #0f766e;         /* 主色（青绿） */
+    --primary-hover: #0d5f58;   /* 主色悬停 */
+    --primary-text: #ffffff;    /* 主色上的文字 */
+    --focus-ring: rgba(15, 118, 110, 0.18);
+    --zebra: #f1f5f9;           /* 斑马纹 */
+    --row-hover: #e6f4f2;       /* 行悬停 */
+    --row-selected: #cdeae6;    /* 行选中 */
+    --border: #e2e8f0;          /* 常规边线 */
+    --border-strong: #cbd5e1;   /* 输入框/按钮边线 */
+    --danger: #dc2626;          /* 危险操作（删除） */
+    --btn-hover: #e8edf3;       /* 通用按钮悬停底 */
+    --overlay: rgba(0, 0, 0, 0.35);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.12);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.22);
+}
+
+/* ============ 方案 B 暗夜 ============ */
+body.theme-b {
+    --bg: #15161e;
+    --panel: #22232e;
+    --panel-alt: #262838;
+    --muted-bg: #2a2b38;
+    --input-bg: #1a1b24;
+    --text: #e2e4ea;
+    --text-sec: #98a0ae;
+    --text-faint: #6b7280;
+    --primary: #7aa2f7;
+    --primary-hover: #8fb0f9;
+    --primary-text: #15161e;
+    --focus-ring: rgba(122, 162, 247, 0.25);
+    --zebra: #1c1d27;
+    --row-hover: #2a2c3d;
+    --row-selected: #31415e;
+    --border: #33354a;
+    --border-strong: #3d4059;
+    --danger: #f87171;
+    --btn-hover: #2e3040;
+    --overlay: rgba(0, 0, 0, 0.55);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55);
+}
+
+/* ============ 方案 C 暖沙 ============ */
+body.theme-c {
+    --bg: #faf9f6;
+    --panel: #ffffff;
+    --panel-alt: #f5f0e8;
+    --muted-bg: #f3efe7;
+    --input-bg: #ffffff;
+    --text: #433522;
+    --text-sec: #8a7d6b;
+    --text-faint: #a89c8a;
+    --primary: #c2410c;
+    --primary-hover: #a63709;
+    --primary-text: #ffffff;
+    --focus-ring: rgba(194, 65, 12, 0.18);
+    --zebra: #f5f2ec;
+    --row-hover: #faefe3;
+    --row-selected: #f9e2c8;
+    --border: #eae4d9;
+    --border-strong: #ddd4c4;
+    --danger: #dc2626;
+    --btn-hover: #f0ebe1;
+    --overlay: rgba(40, 30, 15, 0.35);
+    --shadow-sm: 0 2px 8px rgba(60, 45, 20, 0.12);
+    --shadow-lg: 0 8px 32px rgba(60, 45, 20, 0.22);
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: #f5f5f5;
-    color: #333;
+    background: var(--bg);
+    color: var(--text);
     overflow: hidden;
 }
 
@@ -19,16 +97,16 @@ body {
 
 /* 搜索栏 */
 .search-header {
-    background: #fff;
+    background: var(--panel);
     padding: 8px 16px;
-    border-bottom: 1px solid #e8e8e8;
+    border-bottom: 1px solid var(--border);
 }
 
 .search-box {
     display: flex;
     align-items: center;
-    background: #fff;
-    border: 1px solid #d0d0d0;
+    background: var(--input-bg);
+    border: 1px solid var(--border-strong);
     border-radius: 6px;
     padding: 4px 8px;
     gap: 6px;
@@ -36,13 +114,13 @@ body {
 }
 
 .search-box:focus-within {
-    border-color: #0078d4;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,120,212,0.15);
+    border-color: var(--primary);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.04), 0 0 0 1px var(--focus-ring);
 }
 
 .search-icon {
     font-size: 14px;
-    color: #888;
+    color: var(--text-faint);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -58,6 +136,7 @@ body {
     line-height: 20px;
     outline: none;
     padding: 0;
+    color: var(--text);
 }
 
 .icon-btn {
@@ -67,20 +146,21 @@ body {
     cursor: pointer;
     padding: 2px 6px;
     border-radius: 4px;
-    color: #666;
+    color: var(--text-sec);
 }
 
 .icon-btn:hover {
-    background: rgba(0,0,0,0.06);
+    background: var(--btn-hover);
 }
 
 /* 类型与扩展名过滤（位于搜索行内） */
 .filter-select {
     height: 26px;
     padding: 0 6px;
-    border: 1px solid #d0d0d0;
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
-    background: #fff;
+    background: var(--input-bg);
+    color: var(--text);
     font-size: 12px;
     line-height: 24px;
     outline: none;
@@ -89,7 +169,7 @@ body {
 }
 
 .filter-select:focus {
-    border-color: #0078d4;
+    border-color: var(--primary);
 }
 
 .filter-input {
@@ -97,16 +177,17 @@ body {
     min-width: 110px;
     height: 26px;
     padding: 0 8px;
-    border: 1px solid #d0d0d0;
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
-    background: #fff;
+    background: var(--input-bg);
+    color: var(--text);
     font-size: 12px;
     line-height: 24px;
     outline: none;
 }
 
 .filter-input:focus {
-    border-color: #0078d4;
+    border-color: var(--primary);
 }
 
 /* 索引状态区（位于工具条右侧） */
@@ -120,7 +201,7 @@ body {
     display: inline-block;
     width: 120px;
     height: 6px;
-    background: #e0e0e0;
+    background: var(--border-strong);
     border-radius: 3px;
     overflow: hidden;
     vertical-align: middle;
@@ -130,68 +211,69 @@ body {
     display: block;
     width: 0%;
     height: 100%;
-    background: #0078d4;
+    background: var(--primary);
     border-radius: 3px;
     transition: width 0.3s ease;
 }
 
 .scan-progress-text {
     font-size: 12px;
-    color: #0078d4;
+    color: var(--primary);
     white-space: nowrap;
 }
 
 /* 排序栏 */
 .sort-bar {
-    background: #fff;
+    background: var(--panel);
     padding: 8px 20px;
     display: flex;
     align-items: center;
     gap: 8px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border);
     font-size: 13px;
-    color: #666;
+    color: var(--text-sec);
 }
 
 .sort-btn {
     background: transparent;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-strong);
     padding: 4px 12px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 13px;
+    color: var(--text-sec);
 }
 
 .sort-btn:hover {
-    background: #f0f0f0;
+    background: var(--btn-hover);
 }
 
 .sort-btn.active {
-    background: #0078d4;
-    color: #fff;
-    border-color: #0078d4;
+    background: var(--primary);
+    color: var(--primary-text);
+    border-color: var(--primary);
 }
 
 /* 重置排序：与排序按钮一致的按钮样式 */
 .sort-reset {
     background: transparent;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-strong);
     padding: 4px 12px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 13px;
-    color: #666;
+    color: var(--text-sec);
     margin-left: 4px;
 }
 
 .sort-reset:hover {
-    background: #f0f0f0;
-    color: #d32f2f;
+    background: var(--btn-hover);
+    color: var(--danger);
 }
 
 .sort-tip {
     font-size: 11px;
-    color: #999;
+    color: var(--text-faint);
 }
 
 /* 工具条右侧：索引状态、扫描进度与搜索耗时 */
@@ -207,23 +289,25 @@ body {
 .results-container {
     flex: 1;
     overflow: auto;              /* 列宽超出窗口时出现横向滚动条 */
-    background: #fff;
+    background: var(--panel);
 }
 
 .results-table {
     table-layout: fixed;         /* 固定布局：列宽由 colgroup 控制，长内容以省略号截断 */
-    border-collapse: collapse;
+    border-collapse: separate;   /* collapse 模式会让表头 sticky 失效，改为 separate 才能吸附顶部 */
+    border-spacing: 0;
 }
 
 .results-table th {
-    background: #fafafa;
+    background: var(--panel-alt);
     padding: 4px 8px;
     text-align: left;
     font-weight: 600;
     font-size: 12px;
-    color: #666;
-    border-bottom: 1px solid #e0e0e0;
-    border-right: 2px solid #0078d4;   /* 表头列之间常显 2px 蓝色竖线 */
+    color: var(--text-sec);
+    border-top: 2px solid var(--primary);      /* 表头行上边线加重 */
+    border-bottom: 2px solid var(--primary);   /* 表头行下边线加重 */
+    border-right: 2px solid var(--primary);    /* 表头列之间常显 2px 主色竖线 */
     position: sticky;
     top: 0;
     z-index: 1;
@@ -240,7 +324,7 @@ body {
 .results-table td {
     padding: 2px 8px;
     font-size: 13px;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--border);
     vertical-align: middle;
     white-space: nowrap;         /* 不自动折行 */
     overflow: hidden;
@@ -249,15 +333,15 @@ body {
 
 /* 相邻行明暗交替（斑马纹） */
 .results-table tbody tr:nth-child(even) {
-    background: #f6f7f9;
+    background: var(--zebra);
 }
 
 .results-table tr:hover {
-    background: #f5f9ff;
+    background: var(--row-hover);
 }
 
 .results-table tr.selected {
-    background: #e3f2fd;
+    background: var(--row-selected);
 }
 
 /* 列宽拖拽手柄 */
@@ -273,7 +357,7 @@ body {
 
 .col-resizer:hover,
 .col-resizer.active {
-    background: #0078d4;
+    background: var(--primary);
     opacity: 0.35;
 }
 
@@ -285,7 +369,7 @@ body.col-resizing {
 /* 序号列：固定窄列，居中显示 */
 .col-index {
     text-align: center;
-    color: #999;
+    color: var(--text-faint);
     font-size: 12px;
     padding: 2px 4px;
 }
@@ -301,21 +385,21 @@ body.col-resizing {
 }
 
 .file-name {
-    color: #333;
+    color: var(--text);
 }
 
 .col-path {
-    color: #666;
+    color: var(--text-sec);
 }
 
 .col-modified {
-    color: #666;
+    color: var(--text-sec);
     font-size: 12px;
 }
 
 .col-size {
     text-align: right;
-    color: #666;
+    color: var(--text-sec);
 }
 
 .col-filler {
@@ -324,15 +408,15 @@ body.col-resizing {
 
 /* 分页栏 */
 .pagination-bar {
-    background: #fff;
+    background: var(--panel);
     padding: 8px 20px;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 16px;
     font-size: 13px;
-    color: #666;
-    border-top: 1px solid #e0e0e0;
+    color: var(--text-sec);
+    border-top: 1px solid var(--border);
 }
 
 .pagination-controls {
@@ -343,31 +427,33 @@ body.col-resizing {
 
 .page-btn {
     background: transparent;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-strong);
     padding: 3px 10px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
-    color: #666;
+    color: var(--text-sec);
 }
 
 .page-btn:hover {
-    background: #f0f0f0;
+    background: var(--btn-hover);
 }
 
 .page-jump {
     width: 56px;
     height: 24px;
     padding: 0 6px;
-    border: 1px solid #d0d0d0;
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
     font-size: 12px;
     text-align: center;
     outline: none;
+    background: var(--input-bg);
+    color: var(--text);
 }
 
 .page-jump:focus {
-    border-color: #0078d4;
+    border-color: var(--primary);
 }
 
 /* 隐藏数字输入框的上下箭头 */
@@ -380,10 +466,10 @@ body.col-resizing {
 /* 右键菜单 */
 .context-menu {
     position: fixed;
-    background: #fff;
-    border: 1px solid #ddd;
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    box-shadow: var(--shadow-sm);
     z-index: 1000;
     min-width: 150px;
 }
@@ -392,10 +478,11 @@ body.col-resizing {
     padding: 8px 16px;
     cursor: pointer;
     font-size: 14px;
+    color: var(--text);
 }
 
 .menu-item:hover {
-    background: #f0f0f0;
+    background: var(--btn-hover);
 }
 
 /* 设置面板 */
@@ -405,7 +492,7 @@ body.col-resizing {
     right: 0;
     width: 400px;
     height: 100vh;
-    background: #fff;
+    background: var(--panel);
     box-shadow: -2px 0 8px rgba(0,0,0,0.15);
     display: flex;
     flex-direction: column;
@@ -417,7 +504,7 @@ body.col-resizing {
     justify-content: space-between;
     align-items: center;
     padding: 16px 20px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border);
 }
 
 .settings-header h2 {
@@ -439,7 +526,7 @@ body.col-resizing {
     font-size: 15px;
     font-weight: 600;
     margin-bottom: 12px;
-    color: #333;
+    color: var(--text);
 }
 
 .settings-section ul {
@@ -452,7 +539,7 @@ body.col-resizing {
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
-    background: #f5f5f5;
+    background: var(--muted-bg);
     border-radius: 4px;
     margin-bottom: 4px;
     font-size: 13px;
@@ -461,25 +548,25 @@ body.col-resizing {
 .settings-section li button {
     background: transparent;
     border: none;
-    color: #d32f2f;
+    color: var(--danger);
     cursor: pointer;
     font-size: 13px;
 }
 
 .add-btn {
     background: transparent;
-    border: 1px dashed #999;
+    border: 1px dashed var(--border-strong);
     padding: 8px 16px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 13px;
-    color: #666;
+    color: var(--text-sec);
     width: 100%;
 }
 
 .add-btn:hover {
-    background: #f5f5f5;
-    border-color: #666;
+    background: var(--muted-bg);
+    border-color: var(--text-sec);
 }
 
 .drive-list {
@@ -494,10 +581,10 @@ body.col-resizing {
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    background: #f5f5f5;
+    background: var(--muted-bg);
     border-radius: 4px;
     font-size: 13px;
-    color: #333;
+    color: var(--text);
     cursor: pointer;
 }
 
@@ -507,7 +594,7 @@ body.col-resizing {
 
 .settings-hint {
     font-size: 12px;
-    color: #999;
+    color: var(--text-faint);
     line-height: 1.5;
 }
 
@@ -516,14 +603,14 @@ body.col-resizing {
     margin-left: 8px;
     border: none;
     border-radius: 4px;
-    background: #0078d4;
-    color: #fff;
+    background: var(--primary);
+    color: var(--primary-text);
     font-size: 13px;
     cursor: pointer;
 }
 
 .search-btn:hover {
-    background: #0067b8;
+    background: var(--primary-hover);
 }
 
 .close-action-options {
@@ -538,7 +625,7 @@ body.col-resizing {
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    color: #333;
+    color: var(--text);
     cursor: pointer;
 }
 
@@ -548,15 +635,15 @@ body.col-resizing {
 
 .settings-footer {
     padding: 16px 20px;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid var(--border);
     display: flex;
     gap: 12px;
 }
 
 .primary-btn {
     flex: 1;
-    background: #0078d4;
-    color: #fff;
+    background: var(--primary);
+    color: var(--primary-text);
     border: none;
     padding: 10px 20px;
     border-radius: 4px;
@@ -566,14 +653,14 @@ body.col-resizing {
 }
 
 .primary-btn:hover {
-    background: #006cbe;
+    background: var(--primary-hover);
 }
 
 .secondary-btn {
     flex: 1;
-    background: #fff;
-    color: #333;
-    border: 1px solid #ddd;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
     padding: 10px 20px;
     border-radius: 4px;
     cursor: pointer;
@@ -581,7 +668,7 @@ body.col-resizing {
 }
 
 .secondary-btn:hover {
-    background: #f5f5f5;
+    background: var(--muted-bg);
 }
 
 /* 通用弹窗 */
@@ -591,7 +678,7 @@ body.col-resizing {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.35);
+    background: var(--overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -599,9 +686,9 @@ body.col-resizing {
 }
 
 .modal-content {
-    background: #fff;
+    background: var(--panel);
     border-radius: 8px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
     max-height: 80vh;
@@ -612,7 +699,7 @@ body.col-resizing {
     justify-content: space-between;
     align-items: center;
     padding: 14px 18px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border);
 }
 
 .modal-header h2 {
@@ -625,6 +712,7 @@ body.col-resizing {
     overflow-y: auto;
     line-height: 1.6;
     font-size: 14px;
+    color: var(--text);
 }
 
 .about-content {
@@ -633,7 +721,7 @@ body.col-resizing {
 
 .about-content p {
     margin-bottom: 8px;
-    color: #555;
+    color: var(--text-sec);
 }
 
 .about-actions {
@@ -653,8 +741,8 @@ body.col-resizing {
     font-family: "Consolas", "Microsoft YaHei", monospace;
     font-size: 13px;
     line-height: 1.7;
-    color: #333;
-    background: #fafafa;
+    color: var(--text);
+    background: var(--panel-alt);
     padding: 12px;
     border-radius: 4px;
     max-height: 60vh;

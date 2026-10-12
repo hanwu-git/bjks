@@ -54,6 +54,7 @@ const TYPE_EXTENSIONS = {
 // 字段显示名称
 const FIELD_LABELS = {
     Name: '名称',
+    Path: '路径',
     Size: '大小',
     Modified: '修改时间'
 };

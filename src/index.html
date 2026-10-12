@@ -3,21 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BJKS</title>
+    <title>本机快搜 v1.0.8</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div id="app">
-        <!-- 顶部搜索栏 -->
+        <!-- 顶部搜索栏：搜索框、类型过滤、扩展名过滤、功能按钮合并为一行 -->
         <header class="search-header">
             <div class="search-box">
                 <span class="search-icon">🔍</span>
-                <input type="text" id="searchInput" placeholder="输入关键词搜索文件... (支持多关键词，如: 福建 交流)" autofocus>
+                <input type="text" id="searchInput" class="search-input" placeholder="输入关键词搜索文件... (支持多关键词，如: 福建 交流)" autofocus>
                 <button id="searchBtn" class="search-btn">搜索</button>
-                <button id="settingsBtn" class="icon-btn" title="设置">⚙️</button>
-                <button id="aboutBtn" class="icon-btn" title="关于">?</button>
-            </div>
-            <div class="filter-bar">
                 <select id="extTypeSelect" class="filter-select" title="选择文件类型">
                     <option value="all">所有</option>
                     <option value="audio">音频</option>
@@ -28,7 +24,9 @@
                     <option value="image">图片</option>
                     <option value="video">视频</option>
                 </select>
-                <input type="text" id="extInput" class="filter-input" placeholder="扩展名过滤，如 jpg png pdf，多个用空格分隔">
+                <input type="text" id="extInput" class="filter-input" placeholder="扩展名过滤，如 jpg png pdf" title="扩展名过滤，多个用空格分隔">
+                <button id="settingsBtn" class="icon-btn" title="设置">⚙️</button>
+                <button id="aboutBtn" class="icon-btn" title="关于">?</button>
             </div>
         </header>
 

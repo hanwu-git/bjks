@@ -50,7 +50,8 @@ body {
 }
 
 #searchInput {
-    flex: 1;
+    flex: 2;
+    min-width: 120px;
     border: none;
     background: transparent;
     font-size: 14px;
@@ -73,14 +74,7 @@ body {
     background: rgba(0,0,0,0.06);
 }
 
-/* 扩展名过滤栏 */
-.filter-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 6px;
-}
-
+/* 类型与扩展名过滤（位于搜索行内） */
 .filter-select {
     height: 26px;
     padding: 0 6px;
@@ -91,6 +85,7 @@ body {
     line-height: 24px;
     outline: none;
     cursor: pointer;
+    flex-shrink: 0;
 }
 
 .filter-select:focus {
@@ -99,6 +94,7 @@ body {
 
 .filter-input {
     flex: 1;
+    min-width: 110px;
     height: 26px;
     padding: 0 8px;
     border: 1px solid #d0d0d0;

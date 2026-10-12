@@ -1,6 +1,9 @@
 # Rust
 target/
 
+# 编译产物不入库：BJKS.exe 仅通过 GitHub Releases 发布
+BJKS.exe
+
 # Tauri 自动生成的 schema
 src-tauri/gen/schemas/
 

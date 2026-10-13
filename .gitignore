@@ -4,9 +4,6 @@ target/
 # 编译产物不入库：BJKS.exe 仅通过 GitHub Releases 发布
 BJKS.exe
 
-# Tauri 自动生成的 schema
-src-tauri/gen/schemas/
-
 # Node
 node_modules/
 package-lock.json
@@ -29,3 +26,6 @@ Thumbs.db
 # Temporary files
 tmp_*
 *.tmp
+
+# Mesa 软件渲染 DLL（62MB 二进制，不入 git；编译前从 mesa-dist-win 下载放入 src-app/dlls/）
+src-app/dlls/

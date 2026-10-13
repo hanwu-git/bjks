@@ -1,0 +1,38 @@
+[package]
+name = "BJKS"
+version = "2.0.0"
+description = "本机快搜 - Windows 本地文件快速搜索工具（原生版，无 WebView2 依赖）"
+authors = ["hanwu-git"]
+edition = "2021"
+
+[dependencies]
+# 原生 GUI 框架（egui + glow，无 WebView2）
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow"] }
+egui_extras = { version = "0.29", default-features = false }
+# 系统托盘
+tray-icon = "0.19"
+# 图标加载（窗口/托盘 ico）
+image = { version = "0.25", default-features = false, features = ["ico", "png"] }
+# 本地时间格式化（修改时间列，替代 chrono 的最小方案）
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+rayon = "1"
+walkdir = "2"
+dirs = "5"
+
+[profile.release]
+opt-level = "z"          # 最小体积优先
+lto = true               # 链接时优化
+codegen-units = 1        # 单代码生成单元，进一步优化
+panic = "abort"          # 移除 panic 展开代码
+strip = true             # 去除符号表
+
+# UI 渲染热路径保持较高优化，避免 opt-level=z 导致界面卡顿
+[profile.release.package.egui]
+opt-level = 2
+[profile.release.package.eframe]
+opt-level = 2
+[profile.release.package.epaint]
+opt-level = 2

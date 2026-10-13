@@ -1,6 +1,6 @@
 # BJKS（本机快搜）- 程序说明
 
-当前版本：**1.0.14**
+当前版本：**2.0.0**
 
 ## 下载绿色版
 
@@ -19,14 +19,22 @@ https://github.com/hanwu-git/bjks/releases/latest/download/BJKS.exe
 最终生成的绿色版可执行文件为：
 
 ```
-src-tauri/target/release/BJKS.exe
+src-app/target/release/BJKS.exe
 ```
 
-该文件为单文件绿色版，无需安装，双击即可运行。程序说明文档已编译内嵌在 exe 中，点击标题栏 `?` 按钮即可查看，不需要任何外部文件。首次启动会按设置自动扫描磁盘（默认 C 盘、D 盘）并建立索引，扫描期间状态栏会显示实时进度，索引数据保存在 `%LOCALAPPDATA%\本机快搜` 目录下。程序会记住上次的窗口大小，下次启动按相同尺寸打开；点击关闭默认最小化到系统托盘，可从托盘图标左键单击恢复。
+该文件为单文件绿色版，无需安装，双击即可运行。程序说明文档已编译内嵌在 exe 中，点击标题栏 `关于` 按钮即可查看，不需要任何外部文件。首次启动会按设置自动扫描磁盘（默认 C 盘、D 盘）并建立索引，扫描期间状态栏会显示实时进度，索引数据保存在 `%LOCALAPPDATA%\本机快搜` 目录下。程序会记住上次的窗口大小，下次启动按相同尺寸打开；点击关闭默认最小化到系统托盘，可从托盘图标左键单击恢复。
 
 ## 版本说明
 
-- **1.0.14**（当前版本）
+- **2.0.0**（当前版本）
+  - 重大变更：UI 层从 WebView2（HTML/JS）全面迁移为 Rust 原生 GUI（egui/eframe），**彻底移除 WebView2 运行时依赖**——即使系统未安装 Edge WebView2 也能正常运行
+  - 图形渲染内嵌 Mesa 软件渲染（llvmpipe，OpenGL 4.2）：无独立显卡、远程桌面、虚拟机等无 GPU 环境也能正常显示界面；首次运行会自动把内嵌的渲染组件释放到 exe 旁边并自动重启一次（用户无感）；因此 exe 体积约 64MB
+  - 结果列表改为虚拟化渲染（仅绘制可见行），百万级结果仍可流畅滚动，**取消分页**（原「上一页/下一页/页码跳转」不再需要）
+  - 保留全部既有功能：多关键词搜索、扩展名过滤与文件类型选择、组合排序、列宽拖拽记忆、双击打开、右键菜单、三套配色、索引盘符选择、屏蔽项管理、托盘、窗口尺寸记忆
+  - 配置文件与索引缓存完全兼容 1.x：升级后无需重建索引，直接读取原有缓存
+  - 界面图标从 SVG 改为等价的单色 emoji 图形（字体由系统提供）
+  - 前端目录 `src/`（index.html/main.js/styles.css）不再使用，源码保留在 `webview-v1` 分支
+- **1.0.14**
   - 修复：索引盘符勾选变更后不生效的问题——保存设置时盘符有变化会立即询问是否重建索引；程序重启时也会校验缓存索引的盘符与当前勾选是否一致，不一致自动后台重扫
   - 优化：右键「打开文件」不再闪黑色命令行窗口，改用资源管理器按系统默认关联程序打开
   - 新增：双击结果行即可打开——文件用系统默认程序打开，目录用资源管理器打开
@@ -82,58 +90,49 @@ src-tauri/target/release/BJKS.exe
 
 ## 项目简介
 
-BJKS 是一款基于 Tauri 2.x + Rust 的 Windows 本地文件快速搜索工具，功能包括：
+BJKS 是一款基于 Rust 原生 GUI（egui/eframe，无 WebView2 依赖）的 Windows 本地文件快速搜索工具，功能包括：
 
 - 多关键词文件名搜索（空格分隔，命中所有关键词），点击「搜索」按钮或按回车触发
 - 扩展名过滤与文件类型快速选择（音频、压缩、文档、可执行、图片、视频、文件夹等）
 - 文件大小、修改时间排序，支持组合排序
-- 右键打开文件/打开所在目录/复制路径
+- 虚拟化结果列表（仅渲染可见行，百万级结果流畅滚动，无分页）
+- 右键打开文件/打开所在目录/复制路径，双击行直接打开
 - 屏蔽目录、屏蔽文件模式、屏蔽扩展名设置
 - 状态栏索引进度条（第 X/Y 个盘、完成百分比、已扫描文件数）
 - 设置面板可选择参与索引的盘符（默认 C 盘和 D 盘）
 - 索引缓存与手动重建索引（清空旧索引后重新扫描）
-- 记住窗口大小，下次启动按上次尺寸打开
+- 记住窗口大小与列宽，下次启动按上次布局打开
 - 关闭行为可选：最小化到托盘或直接退出（默认最小化到托盘）
 - 系统托盘图标：左键单击恢复窗口，右键菜单显示主窗口/退出程序
 
 ## 必要文件清单
 
-### 前端界面文件
+### Rust 源码文件（原生版）
 
 | 文件路径 | 功能说明 |
 |---------|---------|
-| `src/index.html` | 主界面 HTML 结构，包含搜索框、过滤栏、结果列表、设置面板等 |
-| `src/main.js` | 前端交互逻辑：搜索请求、结果渲染、排序、右键菜单、设置面板、文件类型图标映射 |
-| `src/styles.css` | 界面样式，定义搜索栏、结果列表、设置面板等视觉效果 |
-
-### Rust 后端文件
-
-| 文件路径 | 功能说明 |
-|---------|---------|
-| `src-tauri/src/main.rs` | 程序入口，初始化 Tauri 应用、加载索引、注册命令、系统托盘与窗口尺寸记忆 |
-| `src-tauri/src/models.rs` | 数据模型定义：`FileEntry`、`SearchRequest`、`SearchResponse`、`AppConfig`、`IndexStatus`、`ScanProgress` 等 |
-| `src-tauri/src/commands/search.rs` | 搜索相关 Tauri 命令：`search`、`get_index_status`（含扫描进度） |
-| `src-tauri/src/commands/settings.rs` | 设置相关 Tauri 命令：配置读写、屏蔽项管理、重建索引、盘符列表、打开文件/目录 |
-| `src-tauri/src/commands/mod.rs` | 命令模块聚合 |
-| `src-tauri/src/indexer/startup.rs` | 启动时加载或创建索引，按盘顺序扫描并实时上报进度、缓存读写 |
-| `src-tauri/src/indexer/mft_scanner.rs` | 基于 walkdir 的文件扫描实现，支持进度回调 |
-| `src-tauri/src/indexer/cache.rs` | SQLite 索引缓存，加速后续启动 |
-| `src-tauri/src/indexer/mod.rs` | 索引模块聚合、盘符枚举与可用盘符列表 |
-| `src-tauri/src/search/engine.rs` | 搜索引擎核心，执行关键词匹配、扩展名过滤、排序、分页 |
-| `src-tauri/src/search/mod.rs` | 搜索模块聚合 |
-| `src-tauri/src/logger.rs` | 日志与数据目录定位（`%LOCALAPPDATA%\本机快搜`） |
-| `src-tauri/src/config/settings.rs` | 应用配置持久化（JSON 文件） |
-| `src-tauri/src/config/mod.rs` | 配置模块聚合 |
+| `src-app/src/main.rs` | 程序入口：加载索引、创建共享状态、启动 eframe 应用、加载应用图标 |
+| `src-app/src/ui/mod.rs` | 主界面：搜索栏、排序栏、虚拟化结果表格、键盘导航、托盘事件处理 |
+| `src-app/src/ui/theme.rs` | 三套界面配色映射（青岚/暗夜/暖沙）与中文字体加载 |
+| `src-app/src/ui/settings_window.rs` | 设置窗口：关闭行为、配色、索引盘符、屏蔽项管理、重建索引 |
+| `src-app/src/ui/about_window.rs` | 关于弹窗与内嵌说明文档展示 |
+| `src-app/src/service.rs` | 服务层：共享状态（引擎/进度）、重建索引、打开文件/目录、时间与大小格式化 |
+| `src-app/src/models.rs` | 数据模型定义：`FileEntry`、`SearchRequest`、`SearchResponse`、`AppConfig`、`IndexStatus`、`ScanProgress` 等 |
+| `src-app/src/indexer/startup.rs` | 启动时加载或创建索引，按盘顺序扫描并实时上报进度、缓存读写与盘符一致性校验 |
+| `src-app/src/indexer/mft_scanner.rs` | 基于 walkdir 的文件扫描实现，支持进度回调 |
+| `src-app/src/indexer/cache.rs` | SQLite 索引缓存，加速后续启动 |
+| `src-app/src/indexer/mod.rs`、`search/mod.rs`、`config/mod.rs`、`src/ui/` 聚合 | 各模块的模块声明与导出 |
+| `src-app/src/search/engine.rs` | 搜索引擎核心，执行关键词匹配、扩展名过滤、组合排序 |
+| `src-app/src/logger.rs` | 日志与数据目录定位（`%LOCALAPPDATA%\本机快搜`） |
+| `src-app/src/config/settings.rs` | 应用配置持久化（JSON 文件） |
 
 ### 配置与资源文件
 
 | 文件路径 | 功能说明 |
 |---------|---------|
-| `src-tauri/tauri.conf.json` | Tauri 主配置文件：窗口定义、安全能力、打包目标、图标引用 |
-| `src-tauri/Cargo.toml` | Rust 项目配置与依赖声明 |
-| `src-tauri/build.rs` | 构建脚本，声明前端资源变化时重新编译 |
-| `src-tauri/capabilities/default.json` | Tauri 2.x 权限能力文件，允许前端调用核心命令 |
-| `src-tauri/icons/icon.ico` | 程序图标，用于 exe 文件、窗口标题栏和任务栏 |
+| `src-app/Cargo.toml` | Rust 项目配置与依赖声明（eframe/egui、tray-icon、image、windows-sys 等） |
+| `src-app/icons/icon.ico` | 程序图标，用于 exe 文件、窗口标题栏、任务栏和托盘 |
+| `src-app/dlls/` | Mesa 软件渲染 DLL（opengl32.dll + libgallium_wgl.dll），编译期内嵌到 exe；不入 git，编译前从 [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) 下载 release-msvc 包，取 x64 下两个 DLL 放入 |
 | `程序说明.md` | 本说明文档，编译期内嵌到 exe 中（`include_str!`） |
 
 ## 运行方式
@@ -141,7 +140,7 @@ BJKS 是一款基于 Tauri 2.x + Rust 的 Windows 本地文件快速搜索工具
 直接双击运行：
 
 ```
-src-tauri/target/release/BJKS.exe
+src-app/target/release/BJKS.exe
 ```
 
 数据目录：
@@ -156,9 +155,12 @@ src-tauri/target/release/BJKS.exe
 
 如果需要重新编译绿色版：
 
+1. 先准备软件渲染组件（若 `src-app/dlls/` 已有则跳过）：从 [mesa-dist-win releases](https://github.com/pal1000/mesa-dist-win/releases) 下载最新 `release-msvc.7z`，把 `x64/opengl32.dll` 和 `x64/libgallium_wgl.dll` 放到 `src-app/dlls/`
+2. 编译：
+
 ```bash
-cd src-tauri
+cd src-app
 cargo build --release
 ```
 
-构建产物位于 `src-tauri/target/release/BJKS.exe`。
+构建产物位于 `src-app/target/release/BJKS.exe`（内嵌全部资源，单文件即可分发）。

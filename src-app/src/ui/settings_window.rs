@@ -55,8 +55,63 @@ impl BjksApp {
     fn settings_content(&mut self, ui: &mut egui::Ui) {
         let c = theme::theme_colors(self.theme_id);
 
+        // ---- 顶部操作栏：固定悬浮在滚动内容上方，任何情况下按钮都可见 ----
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    egui::Button::new(RichText::new("保存").color(c.primary_text))
+                        .fill(c.primary),
+                )
+                .clicked()
+            {
+                self.save_settings_handler();
+            }
+
+            // 重建索引（二次确认）
+            let (label, fill, text_color) = if self.rescan_confirm {
+                ("确认重建？", c.danger, egui::Color32::WHITE)
+            } else {
+                ("重建索引", c.btn_hover, c.text)
+            };
+            if ui
+                .add(
+                    egui::Button::new(RichText::new(label).color(text_color)).fill(fill),
+                )
+                .clicked()
+            {
+                if self.rescan_confirm {
+                    self.rescan_confirm = false;
+                    self.start_rescan();
+                    // 关闭设置窗口（还原主题预览逻辑由关闭分支处理）
+                    self.theme_before = self.theme_id;
+                    self.settings_edit = None;
+                    self.show_settings = false;
+                } else {
+                    self.rescan_confirm = true;
+                }
+            }
+            // 错误提示（与按钮同行，悬停看全文）
+            if let Some(err) = self.settings_error.as_ref() {
+                ui.label(RichText::new(err).small().color(c.danger))
+                    .on_hover_text(err);
+            }
+        });
+        if self.rescan_confirm {
+            ui.label(
+                RichText::new(
+                    "重建索引将清空现有索引并重新扫描磁盘，可能需要几分钟。再次点击按钮确认。",
+                )
+                .small()
+                .color(c.danger),
+            );
+        }
+        ui.separator();
+
+        // ---- 内容区：高度限制在屏幕内（预留标题栏/顶栏/边距），超出部分内部滚动 ----
+        let max_h = (ui.ctx().screen_rect().height() - 180.0).max(240.0);
         egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
+            .auto_shrink([false, true])
+            .max_height(max_h)
             .show(ui, |ui| {
                 // ---- 关闭窗口时 ----
                 ui.heading(RichText::new("🪟 关闭窗口时").size(14.0));
@@ -167,57 +222,6 @@ impl BjksApp {
                     "请输入要屏蔽的扩展名（如 log）",
                 );
             });
-
-        // 错误提示
-        if let Some(err) = self.settings_error.as_ref() {
-            ui.label(RichText::new(err).color(c.danger));
-        }
-
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui
-                .add(
-                    egui::Button::new(RichText::new("保存").color(c.primary_text))
-                        .fill(c.primary),
-                )
-                .clicked()
-            {
-                self.save_settings_handler();
-            }
-
-            // 重建索引（二次确认）
-            let (label, fill, text_color) = if self.rescan_confirm {
-                ("确认重建？", c.danger, egui::Color32::WHITE)
-            } else {
-                ("重建索引", c.btn_hover, c.text)
-            };
-            if ui
-                .add(
-                    egui::Button::new(RichText::new(label).color(text_color)).fill(fill),
-                )
-                .clicked()
-            {
-                if self.rescan_confirm {
-                    self.rescan_confirm = false;
-                    self.start_rescan();
-                    // 关闭设置窗口（还原主题预览逻辑由关闭分支处理）
-                    self.theme_before = self.theme_id;
-                    self.settings_edit = None;
-                    self.show_settings = false;
-                } else {
-                    self.rescan_confirm = true;
-                }
-            }
-        });
-        if self.rescan_confirm {
-            ui.label(
-                RichText::new(
-                    "重建索引将清空现有索引并重新扫描磁盘，可能需要几分钟。再次点击按钮确认。",
-                )
-                .small()
-                .color(c.danger),
-            );
-        }
     }
 
     /// 屏蔽项分组：列表 + 删除按钮 + 添加输入框（借用安全：输入值先取出，用后写回）

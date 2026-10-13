@@ -1,10 +1,15 @@
 # BJKS（本机快搜）- 程序说明
 
-当前版本：**2.0.0**
+当前版本：**2.1.0**
 
 ## 下载绿色版
 
-最新版可执行文件（单文件绿色版，无需安装，双击即可运行）：
+最新版下载（Release 附件二选一）：
+
+- `BJKS-full.zip`：完整版压缩包（BJKS.exe + Mesa 渲染 DLL），解压到同一目录即可运行，**推荐**
+- `BJKS.exe`：裸 exe（约 5MB），配有独立显卡的电脑可直接使用；无显卡/远程桌面环境需配合渲染 DLL 使用
+
+裸 exe 直链：
 
 ```
 https://github.com/hanwu-git/bjks/releases/latest/download/BJKS.exe
@@ -22,11 +27,16 @@ https://github.com/hanwu-git/bjks/releases/latest/download/BJKS.exe
 src-app/target/release/BJKS.exe
 ```
 
-该文件为单文件绿色版，无需安装，双击即可运行。程序说明文档已编译内嵌在 exe 中，点击标题栏 `关于` 按钮即可查看，不需要任何外部文件。首次启动会按设置自动扫描磁盘（默认 C 盘、D 盘）并建立索引，扫描期间状态栏会显示实时进度，索引数据保存在 `%LOCALAPPDATA%\本机快搜` 目录下。程序会记住上次的窗口大小，下次启动按相同尺寸打开；点击关闭默认最小化到系统托盘，可从托盘图标左键单击恢复。
+程序本体无需安装，双击即可运行，但需与 Mesa 软件渲染 DLL（opengl32.dll、libgallium_wgl.dll）放在同一目录——完整版压缩包已包含，解压即可使用；裸 exe 在配有独立显卡的电脑上也可直接运行。程序说明文档已编译内嵌在 exe 中，点击标题栏 `关于` 按钮即可查看。首次启动会按设置自动扫描磁盘（默认 C 盘、D 盘）并建立索引，扫描期间状态栏会显示实时进度，索引数据保存在 `%LOCALAPPDATA%\本机快搜` 目录下。程序会记住上次的窗口大小，下次启动按相同尺寸打开；点击关闭默认最小化到系统托盘，可从托盘图标左键单击恢复。
 
 ## 版本说明
 
-- **2.0.0**（当前版本）
+- **2.1.0**（当前版本）
+  - 体积优化：Mesa 软件渲染 DLL 不再内嵌进 exe，**BJKS.exe 从约 64MB 缩减至约 5MB**；两个 DLL 随「完整版压缩包」一起分发，解压后 exe 与 DLL 同目录即可运行；exe 旁边缺少 DLL 时启动会弹窗提示（配有独立显卡的电脑不受影响）
+  - 恢复：搜索结果分页——每页 1000 条，支持上一页/下一页、页码跳转，状态栏显示「共 N 条结果（当前显示 a–b 条）」，序号跨页连续编号
+  - 界面调整：结果列表区域增加左右留白，序号列不再贴边显示不全
+  - 界面调整：设置 / 关于 / 升级说明弹窗改为在主窗口正中打开
+- **2.0.0**
   - 重大变更：UI 层从 WebView2（HTML/JS）全面迁移为 Rust 原生 GUI（egui/eframe），**彻底移除 WebView2 运行时依赖**——即使系统未安装 Edge WebView2 也能正常运行
   - 图形渲染内嵌 Mesa 软件渲染（llvmpipe，OpenGL 4.2）：无独立显卡、远程桌面、虚拟机等无 GPU 环境也能正常显示界面；首次运行会自动把内嵌的渲染组件释放到 exe 旁边并自动重启一次（用户无感）；因此 exe 体积约 64MB
   - 结果列表改为虚拟化渲染（仅绘制可见行），百万级结果仍可流畅滚动，**取消分页**（原「上一页/下一页/页码跳转」不再需要）
@@ -95,7 +105,7 @@ BJKS 是一款基于 Rust 原生 GUI（egui/eframe，无 WebView2 依赖）的 W
 - 多关键词文件名搜索（空格分隔，命中所有关键词），点击「搜索」按钮或按回车触发
 - 扩展名过滤与文件类型快速选择（音频、压缩、文档、可执行、图片、视频、文件夹等）
 - 文件大小、修改时间排序，支持组合排序
-- 虚拟化结果列表（仅渲染可见行，百万级结果流畅滚动，无分页）
+- 结果列表分页显示（每页 1000 条，支持上一页/下一页与页码跳转），虚拟化渲染仅绘制可见行，滚动流畅
 - 右键打开文件/打开所在目录/复制路径，双击行直接打开
 - 屏蔽目录、屏蔽文件模式、屏蔽扩展名设置
 - 状态栏索引进度条（第 X/Y 个盘、完成百分比、已扫描文件数）
@@ -132,7 +142,7 @@ BJKS 是一款基于 Rust 原生 GUI（egui/eframe，无 WebView2 依赖）的 W
 |---------|---------|
 | `src-app/Cargo.toml` | Rust 项目配置与依赖声明（eframe/egui、tray-icon、image、windows-sys 等） |
 | `src-app/icons/icon.ico` | 程序图标，用于 exe 文件、窗口标题栏、任务栏和托盘 |
-| `src-app/dlls/` | Mesa 软件渲染 DLL（opengl32.dll + libgallium_wgl.dll），编译期内嵌到 exe；不入 git，编译前从 [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) 下载 release-msvc 包，取 x64 下两个 DLL 放入 |
+| `src-app/dlls/` | Mesa 软件渲染 DLL（opengl32.dll + libgallium_wgl.dll）暂存目录，用于打包完整版压缩包；不入 git，从 [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) 下载 release-msvc 包，取 x64 下两个 DLL 放入 |
 | `程序说明.md` | 本说明文档，编译期内嵌到 exe 中（`include_str!`） |
 
 ## 运行方式
@@ -155,12 +165,13 @@ src-app/target/release/BJKS.exe
 
 如果需要重新编译绿色版：
 
-1. 先准备软件渲染组件（若 `src-app/dlls/` 已有则跳过）：从 [mesa-dist-win releases](https://github.com/pal1000/mesa-dist-win/releases) 下载最新 `release-msvc.7z`，把 `x64/opengl32.dll` 和 `x64/libgallium_wgl.dll` 放到 `src-app/dlls/`
-2. 编译：
+1. 编译（渲染组件不再内嵌，无需准备 DLL）：
 
 ```bash
 cd src-app
 cargo build --release
 ```
 
-构建产物位于 `src-app/target/release/BJKS.exe`（内嵌全部资源，单文件即可分发）。
+2. 打包完整版压缩包：从 [mesa-dist-win releases](https://github.com/pal1000/mesa-dist-win/releases) 下载最新 `release-msvc.7z`，取 `x64/opengl32.dll` 与 `x64/libgallium_wgl.dll`，和 `src-app/target/release/BJKS.exe` 放入同一目录后压缩为 zip。
+
+构建产物 `BJKS.exe` 约 5MB；完整版压缩包（exe + 两个渲染 DLL，zip 压缩后约 21MB）供无显卡/远程桌面环境使用。

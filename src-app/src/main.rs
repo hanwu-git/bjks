@@ -17,58 +17,44 @@ use search::engine::SearchEngine;
 use service::AppState;
 use ui::BjksApp;
 
-/// Mesa 软件渲染 DLL（llvmpipe），保证无 GPU / 远程桌面 / 虚拟机环境下也能正常显示界面
-const MESA_OPENGL32: &[u8] = include_bytes!("../dlls/opengl32.dll");
-const MESA_GALLIUM: &[u8] = include_bytes!("../dlls/libgallium_wgl.dll");
+/// 检查 exe 同目录是否存在 Mesa 软件渲染 DLL（随完整版压缩包分发，不再内嵌进 exe）
+/// OpenGL 是启动期静态导入，DLL 必须与 exe 同目录才会被优先加载；缺失时弹窗提示
+fn check_mesa_dlls() {
+    // 强制使用 llvmpipe 纯软件渲染：默认的 d3d12 驱动在无 GPU 环境下初始化会直接退出
+    std::env::set_var("GALLIUM_DRIVER", "llvmpipe");
 
-/// 把内嵌的 Mesa DLL 释放到 exe 同目录（OpenGL 是启动期静态导入，必须放 exe 旁才会被优先加载）
-/// 返回 true 表示本次是首次释放（当前进程已绑定系统 GL，需要重启自身才能加载 Mesa）
-fn ensure_mesa_dlls() -> bool {
     let exe_dir = match std::env::current_exe() {
         Ok(p) => p.parent().map(|d| d.to_path_buf()).unwrap_or_default(),
         Err(e) => {
             app_log(&format!("Mesa DLL：无法定位 exe 目录: {}", e));
-            return false;
+            return;
         }
     };
-    // 强制使用 llvmpipe 纯软件渲染：默认的 d3d12 驱动在无 GPU 环境下初始化会直接退出
-    std::env::set_var("GALLIUM_DRIVER", "llvmpipe");
-
-    let dlls: [(&str, &[u8]); 2] = [
-        ("opengl32.dll", MESA_OPENGL32),
-        ("libgallium_wgl.dll", MESA_GALLIUM),
-    ];
-    let mut released = false;
-    for (name, bytes) in dlls {
-        let target = exe_dir.join(name);
-        if target.exists() {
-            continue;
-        }
-        released = true;
-        let tmp = exe_dir.join(format!("{}.tmp", name));
-        match std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, &target)) {
-            Ok(_) => app_log(&format!("Mesa DLL 已释放: {}", target.display())),
-            Err(e) => app_log(&format!(
-                "Mesa DLL 释放失败（{}，需保证 exe 目录可写）: {}",
-                target.display(),
-                e
-            )),
-        }
+    let missing = ["opengl32.dll", "libgallium_wgl.dll"]
+        .iter()
+        .any(|name| !exe_dir.join(name).exists());
+    if !missing {
+        return;
     }
-    released
-}
-
-/// 首次运行时 Mesa DLL 刚释放、当前进程无法回退加载，需重启自身一次（用户无感）
-fn restart_self() {
-    let exe = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(_) => return,
-    };
-    app_log("首次释放 Mesa DLL，重启进程以加载软件渲染……");
-    let _ = std::process::Command::new(&exe)
-        .args(std::env::args().skip(1))
-        .spawn();
-    std::process::exit(0);
+    app_log("警告：exe 目录缺少 Mesa 软件渲染 DLL（opengl32.dll / libgallium_wgl.dll）");
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            MessageBoxW, MB_ICONWARNING, MB_SETFOREGROUND,
+        };
+        let title: Vec<u16> = "本机快搜".encode_utf16().chain(std::iter::once(0)).collect();
+        let text: Vec<u16> = "未找到 Mesa 软件渲染库（opengl32.dll / libgallium_wgl.dll）。\n\n\
+无显卡或远程桌面环境需要这些文件才能显示界面，请下载完整版压缩包，解压到同一目录后运行。\n\n\
+点击「确定」继续启动（配有独立显卡的电脑可正常运行）。"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        MessageBoxW(
+            0, // HWND：无属主窗口
+            text.as_ptr(),
+            title.as_ptr(),
+            MB_ICONWARNING | MB_SETFOREGROUND,
+        );
+    }
 }
 
 /// 从嵌入的 ico 加载应用图标（窗口 + 托盘共用）
@@ -91,9 +77,7 @@ pub fn load_app_icon() -> Option<egui::IconData> {
 }
 
 fn main() {
-    if ensure_mesa_dlls() {
-        restart_self();
-    }
+    check_mesa_dlls();
     app_log("=== 应用启动（v2 原生版，无 WebView2） ===");
 
     // 1. 加载配置

@@ -33,6 +33,9 @@ const SORT_FIELD_LABELS: [(SortField, &str); 4] = [
 ];
 const DEFAULT_COL_WIDTHS: [f32; 6] = [50.0, 40.0, 260.0, 360.0, 150.0, 110.0];
 
+/// 每页结果条数（与旧版 v1 一致）
+const PAGE_SIZE: usize = 1000;
+
 fn type_ext_query(i: usize) -> &'static str {
     match i {
         1 => "mp3 wav flac aac ogg wma m4a",
@@ -68,6 +71,11 @@ pub struct BjksApp {
     results: Vec<FileEntry>,
     total: usize,
     query_time_ms: u64,
+
+    // 分页状态
+    current_page: usize,  // 当前页码（从 1 开始）
+    page_jump: String,    // 页码跳转输入
+    jump_has_focus: bool, // 跳转输入框聚焦时屏蔽全局快捷键
 
     // 表格
     col_widths: [f32; 6],
@@ -143,6 +151,9 @@ impl BjksApp {
             results: Vec::new(),
             total: 0,
             query_time_ms: 0,
+            current_page: 1,
+            page_jump: String::new(),
+            jump_has_focus: false,
             col_widths,
             col_dirty: false,
             col_saved_at: Instant::now(),
@@ -171,8 +182,12 @@ impl BjksApp {
     // ---- 搜索与排序 ----
 
     pub fn do_search(&mut self) {
-        let config = service::get_config();
-        let max_results = config.max_results;
+        self.current_page = 1;
+        self.run_search();
+    }
+
+    /// 按当前页码执行分页搜索（每页 PAGE_SIZE 条）
+    fn run_search(&mut self) {
         let request = SearchRequest {
             query: self.query.trim().to_string(),
             ext_query: self.ext_input.trim().to_string(),
@@ -184,29 +199,42 @@ impl BjksApp {
                 .unwrap_or(SortField::None),
             sort_asc: self.sort_orders.first().map(|o| o.asc).unwrap_or(true),
             sort_orders: self.sort_orders.clone(),
-            offset: 0,
-            limit: usize::MAX,
-        };
-        // max_results > 0 时限制结果数（与旧版行为一致）
-        let limit = if max_results > 0 {
-            max_results
-        } else {
-            usize::MAX
+            offset: (self.current_page.saturating_sub(1)) * PAGE_SIZE,
+            limit: PAGE_SIZE,
         };
 
         let response = {
             let engine = self.state.engine.lock().unwrap();
-            engine.search_with_limit(&request, limit)
+            engine.search_with_limit(&request, PAGE_SIZE)
         };
         app_log(&format!(
-            "搜索完成: query={}, total={}, query_time_ms={}",
-            request.query, response.total, response.query_time_ms
+            "搜索完成: query={}, total={}, page={}, query_time_ms={}",
+            request.query, response.total, self.current_page, response.query_time_ms
         ));
         self.results = response.results;
         self.total = response.total;
         self.query_time_ms = response.query_time_ms;
         self.selected = None;
+        self.page_jump.clear();
         self.table_gen += 1; // 重置表格滚动位置
+    }
+
+    fn total_pages(&self) -> usize {
+        if self.total == 0 {
+            1
+        } else {
+            self.total.div_ceil(PAGE_SIZE)
+        }
+    }
+
+    fn go_to_page(&mut self, page: usize) {
+        let p = page.clamp(1, self.total_pages());
+        if p != self.current_page {
+            self.current_page = p;
+            self.run_search();
+        } else {
+            self.page_jump.clear();
+        }
     }
 
     fn handle_sort_click(&mut self, field: SortField) {
@@ -289,8 +317,8 @@ impl BjksApp {
         });
         let n = self.results.len();
 
-        // 搜索框聚焦时：箭头/回车交给输入框逻辑处理
-        if self.search_has_focus {
+        // 搜索框/页码跳转框聚焦时：箭头/回车交给输入框逻辑处理
+        if self.search_has_focus || self.jump_has_focus {
             return;
         }
         if down && n > 0 {
@@ -495,11 +523,16 @@ impl BjksApp {
     fn results_table(&mut self, ctx: &egui::Context) {
         let c = theme::theme_colors(self.theme_id);
         egui::CentralPanel::default()
-            .frame(egui::Frame::default().fill(c.bg))
+            .frame(
+                egui::Frame::default()
+                    .fill(c.bg)
+                    .inner_margin(egui::Margin::symmetric(10.0, 4.0)),
+            )
             .show(ctx, |ui| {
                 let id_salt = format!("results_table_{}", self.table_gen);
 
                 // 借用拆分：表格渲染期间只读 results，行状态用局部变量收集
+                let page_offset = (self.current_page.saturating_sub(1)) * PAGE_SIZE;
                 let results = &self.results;
                 let mut selected = self.selected;
                 let mut actions: Vec<RowAction> = Vec::new();
@@ -560,13 +593,13 @@ impl BjksApp {
                             let entry = &results[idx];
                             let is_selected = selected == Some(idx);
 
-                            // 序号
+                            // 序号（跨页连续编号）
                             row.col(|ui| {
+                                let num = page_offset + idx + 1;
                                 let t = if is_selected {
-                                    egui::RichText::new(format!("{}", idx + 1)).strong()
+                                    egui::RichText::new(format!("{}", num)).strong()
                                 } else {
-                                    egui::RichText::new(format!("{}", idx + 1))
-                                        .color(c.text_sec)
+                                    egui::RichText::new(format!("{}", num)).color(c.text_sec)
                                 };
                                 ui.label(t);
                             });
@@ -668,6 +701,7 @@ impl BjksApp {
 
     fn bottom_bar(&mut self, ctx: &egui::Context) {
         let c = theme::theme_colors(self.theme_id);
+        let pages = self.total_pages();
         egui::TopBottomPanel::bottom("status_bar")
             .frame(
                 egui::Frame::default()
@@ -676,12 +710,61 @@ impl BjksApp {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
+                    // 左侧：总数与当前显示范围
                     let text = if self.total == 0 {
                         "无匹配结果".to_string()
                     } else {
-                        format!("共 {} 条结果", self.total)
+                        let from = (self.current_page - 1) * PAGE_SIZE + 1;
+                        let to = (self.current_page * PAGE_SIZE).min(self.total);
+                        format!("共 {} 条结果（当前显示 {}–{} 条）", self.total, from, to)
                     };
                     ui.label(egui::RichText::new(text).color(c.text_sec));
+
+                    // 右侧：分页控件（right_to_left：先加的在最右）
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if ui
+                                .add_enabled(
+                                    self.current_page < pages,
+                                    egui::Button::new("下一页"),
+                                )
+                                .clicked()
+                            {
+                                self.go_to_page(self.current_page + 1);
+                            }
+                            // 页码跳转：输入页码后回车
+                            let jump = ui.add_sized(
+                                [56.0, 20.0],
+                                egui::TextEdit::singleline(&mut self.page_jump)
+                                    .hint_text("页码"),
+                            );
+                            self.jump_has_focus = jump.has_focus();
+                            if jump.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                if let Ok(p) = self.page_jump.trim().parse::<usize>() {
+                                    self.go_to_page(p);
+                                }
+                            }
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "第 {} / {} 页",
+                                    self.current_page, pages
+                                ))
+                                .color(c.text_sec),
+                            );
+                            if ui
+                                .add_enabled(
+                                    self.current_page > 1,
+                                    egui::Button::new("上一页"),
+                                )
+                                .clicked()
+                            {
+                                self.go_to_page(self.current_page.saturating_sub(1));
+                            }
+                        },
+                    );
                 });
             });
     }

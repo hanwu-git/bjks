@@ -35,6 +35,8 @@ impl BjksApp {
             .resizable(false)
             .collapsible(false)
             .default_width(460.0)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.screen_rect().center())
             .show(ctx, |ui| {
                 self.settings_content(ui);
             });

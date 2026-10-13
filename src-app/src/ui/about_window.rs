@@ -20,6 +20,8 @@ impl BjksApp {
             .open(&mut open)
             .resizable(false)
             .collapsible(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.screen_rect().center())
             .show(ctx, |ui| {
                 ui.label(RichText::new("BJKS（本机快搜）").strong());
                 ui.label(format!(
@@ -62,6 +64,8 @@ impl BjksApp {
             .collapsible(false)
             .default_width(640.0)
             .default_height(500.0)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.screen_rect().center())
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])

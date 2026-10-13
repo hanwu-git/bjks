@@ -1,6 +1,6 @@
 [package]
 name = "BJKS"
-version = "2.1.1"
+version = "2.1.2"
 description = "本机快搜 - Windows 本地文件快速搜索工具（原生版，无 WebView2 依赖）"
 authors = ["hanwu-git"]
 edition = "2021"
@@ -21,6 +21,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 rayon = "1"
 walkdir = "2"
 dirs = "5"
+
+[build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = "z"          # 最小体积优先

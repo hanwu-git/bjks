@@ -86,6 +86,9 @@ pub struct BjksApp {
     search_has_focus: bool,
     first_frame: bool,
 
+    // 系统彩色图标纹理缓存（key：扩展名小写带点 / "__dir__"）
+    icon_cache: std::collections::HashMap<String, egui::TextureHandle>,
+
     // 窗口开关与设置面板
     pub show_settings: bool,
     pub show_about: bool,
@@ -109,7 +112,7 @@ pub struct BjksApp {
 }
 
 impl BjksApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, state: AppState) -> Self {
+    pub fn new(ctx: egui::Context, state: AppState) -> Self {
         let config = service::get_config();
         let theme_id = match config.theme.as_str() {
             "a" | "b" | "c" => config.theme.chars().next().unwrap_or('a'),
@@ -119,13 +122,13 @@ impl BjksApp {
         // 托盘初始化
         let (tray, tray_msgs) = match crate::load_app_icon() {
             Some(icon) => {
-                let (tray, msgs) = setup_tray(&icon, cc.egui_ctx.clone());
+                let (tray, msgs) = setup_tray(&icon, ctx.clone());
                 (tray, msgs)
             }
             None => (None, Arc::new(Mutex::new(Vec::new()))),
         };
 
-        theme::apply(&cc.egui_ctx, theme_id);
+        theme::apply(&ctx, theme_id);
 
         // 恢复列宽（兼容旧版 6 项配置；不足或类型不符时用默认值）
         let mut col_widths = DEFAULT_COL_WIDTHS;
@@ -137,7 +140,7 @@ impl BjksApp {
 
         Self {
             state,
-            ctx: cc.egui_ctx.clone(),
+            ctx: ctx.clone(),
             close_action: config.close_action.clone(),
             theme_id,
             query: String::new(),
@@ -161,6 +164,7 @@ impl BjksApp {
             selected: None,
             search_has_focus: false,
             first_frame: true,
+            icon_cache: std::collections::HashMap::new(),
             show_settings: false,
             show_about: false,
             show_readme: false,
@@ -344,40 +348,84 @@ impl BjksApp {
         }
     }
 
+    // ---- 系统图标 ----
+
+    /// 计算条目的图标缓存键与是否目录
+    fn icon_key_of(entry: &FileEntry) -> (String, bool) {
+        if entry.is_dir {
+            ("__dir__".to_string(), true)
+        } else {
+            let key = std::path::Path::new(entry.path.as_ref())
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| format!(".{}", s.to_lowercase()))
+                .unwrap_or_default();
+            (key, false)
+        }
+    }
+
+    /// 按键取系统彩色图标纹理（懒加载 + 缓存）；系统 API 失败时返回 None，调用方回退 emoji
+    fn icon_texture_by_key(
+        &mut self,
+        ctx: &egui::Context,
+        key: &str,
+        is_dir: bool,
+    ) -> Option<egui::TextureHandle> {
+        if let Some(tex) = self.icon_cache.get(key) {
+            return Some(tex.clone());
+        }
+        let (rgba, w, h) = crate::sysicon::load_system_icon(key, is_dir)?;
+        let image = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
+        let tex = ctx.load_texture(
+            format!("sysicon_{}", key),
+            image,
+            egui::TextureOptions::LINEAR,
+        );
+        self.icon_cache.insert(key.to_string(), tex.clone());
+        Some(tex)
+    }
+
     // ---- 面板 ----
 
-    fn top_bar(&mut self, ctx: &egui::Context) {
+    fn top_bar(&mut self, ui_root: &mut egui::Ui) {
         let c = theme::theme_colors(self.theme_id);
-        egui::TopBottomPanel::top("search_bar")
+        egui::Panel::top("search_bar")
             .frame(
                 egui::Frame::default()
                     .fill(c.panel)
-                    .inner_margin(egui::Margin::symmetric(8.0, 6.0)),
+                    .inner_margin(egui::Margin::symmetric(8, 6)),
             )
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    let available = ui.available_width();
-                    let resp = ui.add_sized(
-                        [(available - 430.0).max(120.0), 24.0],
-                        egui::TextEdit::singleline(&mut self.query).hint_text(
-                            "输入关键词搜索文件... (支持多关键词，如: 福建 交流)",
-                        ),
-                    );
-                    self.search_has_focus = resp.has_focus();
-                    if self.first_frame {
-                        resp.request_focus();
-                    }
-                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        self.do_search();
+            .show_inside(ui_root, |ui| {
+                // 右到左布局：固定宽度控件从右缘依次排布，搜索框最后吃掉剩余宽度。
+                // 全部控件固定高 28 + 垂直居中，保证按钮/输入框/下拉完全对齐
+                const BAR_H: f32 = 28.0;
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // ComboBox 收起态按钮高度取自 interact_size.y（其 .height() 是弹窗限高）
+                    ui.spacing_mut().interact_size.y = BAR_H;
+                    if ui
+                        .add(
+                            egui::Button::new("关于").min_size(egui::vec2(0.0, BAR_H)),
+                        )
+                        .clicked()
+                    {
+                        self.show_about = true;
                     }
                     if ui
                         .add(
-                            egui::Button::new(
-                                egui::RichText::new("搜索").color(c.primary_text),
-                            )
-                            .fill(c.primary),
+                            egui::Button::new("⚙ 设置").min_size(egui::vec2(0.0, BAR_H)),
                         )
                         .clicked()
+                    {
+                        self.open_settings();
+                    }
+                    let ext_edit = ui.add_sized(
+                        [170.0, BAR_H],
+                        egui::TextEdit::singleline(&mut self.ext_input)
+                            .min_size(egui::vec2(0.0, BAR_H))
+                            .hint_text("扩展名过滤，如 jpg png pdf"),
+                    );
+                    if ext_edit.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
                     {
                         self.do_search();
                     }
@@ -391,22 +439,34 @@ impl BjksApp {
                             }
                         });
 
-                    let ext_edit = ui.add_sized(
-                        [170.0, 24.0],
-                        egui::TextEdit::singleline(&mut self.ext_input)
-                            .hint_text("扩展名过滤，如 jpg png pdf"),
-                    );
-                    if ext_edit.lost_focus()
-                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("搜索").color(c.primary_text),
+                            )
+                            .fill(c.primary)
+                            .min_size(egui::vec2(0.0, BAR_H)),
+                        )
+                        .clicked()
                     {
                         self.do_search();
                     }
 
-                    if ui.button("⚙ 设置").clicked() {
-                        self.open_settings();
+                    // 搜索框：占据最左侧剩余的全部宽度
+                    let resp = ui.add_sized(
+                        [ui.available_width().max(120.0), BAR_H],
+                        egui::TextEdit::singleline(&mut self.query)
+                            .min_size(egui::vec2(0.0, BAR_H))
+                            .hint_text(
+                                "输入关键词搜索文件... (支持多关键词，如: 福建 交流)",
+                            ),
+                    );
+                    self.search_has_focus = resp.has_focus();
+                    if self.first_frame {
+                        resp.request_focus();
                     }
-                    if ui.button("关于").clicked() {
-                        self.show_about = true;
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        self.do_search();
                     }
                 });
             });
@@ -423,15 +483,15 @@ impl BjksApp {
         }
     }
 
-    fn sort_bar(&mut self, ctx: &egui::Context) {
+    fn sort_bar(&mut self, ui_root: &mut egui::Ui) {
         let c = theme::theme_colors(self.theme_id);
-        egui::TopBottomPanel::top("sort_bar")
+        egui::Panel::top("sort_bar")
             .frame(
                 egui::Frame::default()
                     .fill(c.panel)
-                    .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+                    .inner_margin(egui::Margin::symmetric(8, 4)),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui_root, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new("排序:").color(c.text_sec),
@@ -520,15 +580,34 @@ impl BjksApp {
             });
     }
 
-    fn results_table(&mut self, ctx: &egui::Context) {
+    fn results_table(&mut self, ui_root: &mut egui::Ui) {
         let c = theme::theme_colors(self.theme_id);
+
+        // 预取本页系统彩色图标（在 panel 闭包外完成：去重后仅未缓存的扩展名调一次 Shell API）
+        let icon_keys: Vec<(String, bool)> =
+            self.results.iter().map(Self::icon_key_of).collect();
+        {
+            let ctx = self.ctx.clone();
+            let mut fetched: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for (k, d) in &icon_keys {
+                if fetched.insert(k.clone()) {
+                    self.icon_texture_by_key(&ctx, k, *d);
+                }
+            }
+        }
+        let icon_textures: Vec<Option<egui::TextureHandle>> = icon_keys
+            .iter()
+            .map(|(k, _)| self.icon_cache.get(k).cloned())
+            .collect();
+
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
                     .fill(c.bg)
-                    .inner_margin(egui::Margin::symmetric(10.0, 4.0)),
+                    .inner_margin(egui::Margin::symmetric(10, 4)),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui_root, |ui| {
                 let id_salt = format!("results_table_{}", self.table_gen);
 
                 // 借用拆分：表格渲染期间只读 results，行状态用局部变量收集
@@ -544,7 +623,11 @@ impl BjksApp {
                     .resizable(true)
                     .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                     .column(Column::exact(self.col_widths[0]).resizable(false))
-                    .column(Column::exact(self.col_widths[1]).resizable(false))
+                    .column(
+                        Column::exact(self.col_widths[1])
+                            .resizable(false)
+                            .clip(true),
+                    )
                     .column(
                         Column::initial(self.col_widths[2])
                             .resizable(true)
@@ -603,9 +686,30 @@ impl BjksApp {
                                 };
                                 ui.label(t);
                             });
-                            // 图标
+                            // 图标：系统关联彩色图标纹理（单元格内居中，尺寸不超过单元格）；
+                            // 取不到时回退 emoji
                             row.col(|ui| {
-                                ui.label(service::file_icon(entry));
+                                let s = 16.0_f32
+                                    .min(ui.available_width())
+                                    .min(ui.available_height());
+                                ui.with_layout(
+                                    egui::Layout::centered_and_justified(
+                                        egui::Direction::LeftToRight,
+                                    ),
+                                    |ui| match icon_textures.get(idx).and_then(|t| t.as_ref()) {
+                                        Some(tex) => {
+                                            ui.add(egui::Image::from_texture(
+                                                egui::load::SizedTexture::new(
+                                                    tex,
+                                                    egui::vec2(s, s),
+                                                ),
+                                            ));
+                                        }
+                                        None => {
+                                            ui.label(service::file_icon(entry));
+                                        }
+                                    },
+                                );
                             });
                             // 文件名（截断 + 悬停完整名）
                             row.col(|ui| {
@@ -699,16 +803,16 @@ impl BjksApp {
             });
     }
 
-    fn bottom_bar(&mut self, ctx: &egui::Context) {
+    fn bottom_bar(&mut self, ui_root: &mut egui::Ui) {
         let c = theme::theme_colors(self.theme_id);
         let pages = self.total_pages();
-        egui::TopBottomPanel::bottom("status_bar")
+        egui::Panel::bottom("status_bar")
             .frame(
                 egui::Frame::default()
                     .fill(c.panel)
-                    .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+                    .inner_margin(egui::Margin::symmetric(8, 4)),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui_root, |ui| {
                 ui.horizontal(|ui| {
                     // 左侧：总数与当前显示范围
                     let text = if self.total == 0 {
@@ -786,7 +890,7 @@ impl BjksApp {
     /// 立即保存当前窗口尺寸（退出前调用）
     fn save_window_size_now(&mut self) {
         let (w, h) = self.ctx.input(|i| {
-            let r = i.screen_rect;
+            let r = i.viewport_rect();
             (r.width() as u32, r.height() as u32)
         });
         if w > 0 && h > 0 {
@@ -829,15 +933,15 @@ fn row_interaction(
             } else {
                 actions.push(RowAction::OpenFile(entry.path.to_string()));
             }
-            ui.close_menu();
+            ui.close();
         }
         if ui.button("打开所在目录").clicked() {
             actions.push(RowAction::OpenFolder(entry.path.to_string()));
-            ui.close_menu();
+            ui.close();
         }
         if ui.button("复制路径").clicked() {
-            ui.output_mut(|o| o.copied_text = entry.path.to_string());
-            ui.close_menu();
+            ui.ctx().copy_text(entry.path.to_string());
+            ui.close();
         }
     });
 }
@@ -885,6 +989,7 @@ fn setup_tray(
 
     // 事件轮询线程：收集托盘/菜单事件并唤醒 UI
     let msgs_for_thread = Arc::clone(&msgs);
+    let ctx_for_poll = ui_ctx.clone();
     std::thread::spawn(move || loop {
         let mut got = false;
         while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
@@ -912,7 +1017,7 @@ fn setup_tray(
             }
         }
         if got {
-            ui_ctx.request_repaint();
+            ctx_for_poll.request_repaint();
         }
         std::thread::sleep(Duration::from_millis(150));
     });
@@ -920,26 +1025,20 @@ fn setup_tray(
     (tray_icon, msgs)
 }
 
-impl eframe::App for BjksApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl egui_software_backend::App for BjksApp {
+    fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        _backend: &mut egui_software_backend::SoftwareBackend,
+    ) {
+        let ctx = ui.ctx().clone();
+
         // 0. 托盘消息
-        self.handle_tray_msgs(ctx);
+        self.handle_tray_msgs(&ctx);
 
-        // 1. 关闭行为：按配置选择最小化到托盘或直接退出
-        if ctx.input(|i| i.viewport().close_requested()) {
-            if self.close_action != "exit" {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                app_log("窗口关闭请求：已最小化到托盘");
-            } else {
-                self.save_window_size_now();
-                app_log("窗口关闭请求：直接退出程序");
-            }
-        }
-
-        // 2. 窗口尺寸变化记录（800ms 节流写回）
+        // 1. 窗口尺寸变化记录（800ms 节流写回）
         let size = ctx.input(|i| {
-            let r = i.screen_rect;
+            let r = i.viewport_rect();
             (r.width(), r.height())
         });
         let stable = match self.pending_size {
@@ -956,29 +1055,30 @@ impl eframe::App for BjksApp {
             }
         }
 
-        // 3. 列宽节流写盘（400ms）
+        // 2. 列宽节流写盘（400ms）
         if self.col_dirty && self.col_saved_at.elapsed() >= Duration::from_millis(400) {
             self.save_column_widths();
         }
 
-        // 4. 全局键盘导航
-        self.handle_shortcuts(ctx);
+        // 3. 全局键盘导航
+        self.handle_shortcuts(&ctx);
 
-        // 5. 主界面面板
-        self.top_bar(ctx);
-        self.sort_bar(ctx);
-        self.results_table(ctx);
-        self.bottom_bar(ctx);
+        // 4. 主界面面板
+        // 注意：show_inside 模式靠 cursor 流分配空间，所有 top/bottom 面板必须先添加，
+        // CentralPanel 最后添加占据中间剩余区域，否则后添加的 bottom 面板会被挤成 0 高
+        self.top_bar(ui);
+        self.sort_bar(ui);
+        self.bottom_bar(ui);
 
-        // 6. 盘符变更后的重建索引询问（横幅）
+        // 5. 盘符变更后的重建索引询问（横幅，同为 bottom 面板，须在 CentralPanel 之前）
         if self.drive_confirm {
-            egui::TopBottomPanel::bottom("drive_confirm_bar")
+            egui::Panel::bottom("drive_confirm_bar")
                 .frame(
                     egui::Frame::default()
                         .fill(theme::theme_colors(self.theme_id).panel_alt)
-                        .inner_margin(egui::Margin::symmetric(8.0, 6.0)),
+                        .inner_margin(egui::Margin::symmetric(8, 6)),
                 )
-                .show(ctx, |ui| {
+                .show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("索引盘符已变更，是否立即重建索引使新盘符生效？");
                         if ui.button("立即重建").clicked() {
@@ -992,9 +1092,29 @@ impl eframe::App for BjksApp {
                 });
         }
 
-        // 7. 弹窗
-        self.settings_window(ctx);
-        self.about_window(ctx);
-        self.readme_window(ctx);
+        // 中央结果表格（必须最后添加）
+        self.results_table(ui);
+
+        // 6. 弹窗（独立 Window 层，不受面板流影响）
+        self.settings_window(&ctx);
+        self.about_window(&ctx);
+        self.readme_window(&ctx);
+    }
+
+    fn on_close_requested(&mut self, ctx: &egui::Context) -> bool {
+        // 返回 false 拦截关闭并隐藏窗口（最小化到托盘）；true 放行退出
+        if self.close_action != "exit" {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            app_log("窗口关闭请求：已最小化到托盘");
+            false
+        } else {
+            self.save_window_size_now();
+            app_log("窗口关闭请求：直接退出程序");
+            true
+        }
+    }
+
+    fn on_exit(&mut self, _ctx: &egui::Context) {
+        self.save_window_size_now();
     }
 }

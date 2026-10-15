@@ -148,6 +148,7 @@ pub fn install_fonts(ctx: &egui::Context) {
         "simsun.ttc", // 宋体
     ];
 
+    // 不带 default_fonts feature：系统雅黑覆盖拉丁+中文，置于字体链首位
     let mut fonts = egui::FontDefinitions::default();
     for name in CANDIDATES {
         let path = std::path::Path::new(r"C:\Windows\Fonts").join(name);
@@ -156,22 +157,34 @@ pub fn install_fonts(ctx: &egui::Context) {
                 fonts
                     .font_data
                     .insert("cjk".to_string(), egui::FontData::from_owned(bytes).into());
-                // 挂在字体链末尾：拉丁字符用默认字体，中文回退到 CJK 字体
                 fonts
                     .families
                     .entry(egui::FontFamily::Proportional)
                     .or_default()
-                    .push("cjk".into());
+                    .insert(0, "cjk".into());
                 fonts
                     .families
                     .entry(egui::FontFamily::Monospace)
                     .or_default()
-                    .push("cjk".into());
-                crate::logger::app_log(&format!("已加载中文字体: {}", path.display()));
+                    .insert(0, "cjk".into());
+                crate::logger::app_log(&format!("已加载系统字体: {}", path.display()));
                 break;
             }
             Err(_) => continue,
         }
     }
+
+    // emoji 字形兜底（egui 光栅化为黑白轮廓；彩色文件图标走系统 Shell 图标纹理）
+    if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\seguiemj.ttf") {
+        fonts
+            .font_data
+            .insert("emoji".to_string(), egui::FontData::from_owned(bytes).into());
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .push("emoji".into());
+    }
+
     ctx.set_fonts(fonts);
 }

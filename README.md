@@ -1,13 +1,12 @@
 # BJKS（本机快搜）- 程序说明
 
-当前版本：**2.1.3**
+当前版本：**3.0.0**
 
 ## 下载绿色版
 
-最新版下载（Release 附件二选一）：
+最新版下载（Release 附件）：
 
-- `BJKS-full.zip`：完整版压缩包（BJKS.exe + Mesa 渲染 DLL），解压到同一目录即可运行，**推荐**
-- `BJKS.exe`：裸 exe（约 5MB），配有独立显卡的电脑可直接使用；无显卡/远程桌面环境需配合渲染 DLL 使用
+- `BJKS.exe`：绿色单文件（约 6MB），**即下即用**——纯 CPU 软件渲染，无显卡、远程桌面、虚拟机均可直接运行，无需任何外部 DLL
 
 裸 exe 直链：
 
@@ -27,11 +26,17 @@ https://github.com/hanwu-git/bjks/releases/latest/download/BJKS.exe
 src-app/target/release/BJKS.exe
 ```
 
-程序本体无需安装，双击即可运行，但需与 Mesa 软件渲染 DLL（opengl32.dll、libgallium_wgl.dll）放在同一目录——完整版压缩包已包含，解压即可使用；裸 exe 在配有独立显卡的电脑上也可直接运行。程序说明文档已编译内嵌在 exe 中，点击标题栏 `关于` 按钮即可查看。首次启动会按设置自动扫描磁盘（默认 C 盘、D 盘）并建立索引，扫描期间状态栏会显示实时进度，索引数据保存在 `%LOCALAPPDATA%\本机快搜` 目录下。程序会记住上次的窗口大小，下次启动按相同尺寸打开；点击关闭默认最小化到系统托盘，可从托盘图标左键单击恢复。
+程序本体无需安装，双击即可运行——**单文件即完整版**，无需任何外部 DLL 或运行时依赖，渲染层为纯 Rust CPU 软件绘制（不依赖 GPU/OpenGL），任何 Windows 环境均可直接运行。程序说明文档已编译内嵌在 exe 中，点击标题栏 `关于` 按钮即可查看。首次启动会按设置自动扫描磁盘（默认 C 盘、D 盘）并建立索引，扫描期间状态栏会显示实时进度，索引数据保存在 `%LOCALAPPDATA%\本机快搜` 目录下。程序会记住上次的窗口大小，下次启动按相同尺寸打开；点击关闭默认最小化到系统托盘，可从托盘图标左键单击恢复。
 
 ## 版本说明
 
-- **2.1.3**（当前版本）
+- **3.0.0**（当前版本）
+  - 重大变更：渲染层从 OpenGL（eframe/glow + Mesa）全面迁移为**纯 Rust CPU 软件渲染**（tiny-skia + softbuffer）——零 GPU、零 OpenGL、零外部 DLL，任何 Windows 环境单文件直接运行；**不再需要 BJKS-full.zip 完整版压缩包**（历史版本的 Mesa DLL 分发方式就此终结）
+  - 升级：egui 0.29 → 0.34，字体加载改为优先使用系统微软雅黑，中文渲染更佳
+  - 新增：结果列表显示**系统关联的真实彩色文件图标**（与资源管理器同源，按扩展名缓存），不再是单色 emoji；缺省回退 emoji 显示
+  - 修复：窗口隐藏到托盘后，托盘左键恢复与右键菜单操作全部无效的问题（软件渲染后端在隐藏窗口下收不到系统重绘通知，补丁后后台请求直接驱动重绘）
+  - 修复：搜索栏按钮/输入框/下拉框高度不统一、下边缘不对齐的问题（统一 28px 垂直居中）；顶栏布局改为搜索框自动占满剩余宽度，任何窗口宽度下按钮不再溢出
+- **2.1.3**
   - 改进：启动不再预弹「缺少 Mesa 渲染库」提示——有独立显卡的电脑裸 exe 启动全程零弹窗；仅当图形界面初始化真正失败时，才弹出带错误详情和补救指引的错误弹窗；启动日志会记录随包渲染库状态便于远程排查
 - **2.1.2**
   - 修复：BJKS.exe 文件本身没有图标的问题——构建脚本（build.rs + winresource）在编译期把 `icons/icon.ico` 嵌入 exe，资源管理器 / 任务栏 / 标题栏均显示程序图标
@@ -146,9 +151,10 @@ BJKS 是一款基于 Rust 原生 GUI（egui/eframe，无 WebView2 依赖）的 W
 
 | 文件路径 | 功能说明 |
 |---------|---------|
-| `src-app/Cargo.toml` | Rust 项目配置与依赖声明（eframe/egui、tray-icon、image、windows-sys 等） |
+| `src-app/Cargo.toml` | Rust 项目配置与依赖声明（egui 0.34 + 自研软件渲染后端、tray-icon、image、windows-sys 等） |
+| `src-app/vendor/` | 本地 vendor 依赖：`egui_software_backend`（自研 CPU 软件渲染后端，tiny-skia + softbuffer，含 BJKS 专用补丁）、`egui`/`epaint` 等小补丁 |
 | `src-app/icons/icon.ico` | 程序图标，用于 exe 文件、窗口标题栏、任务栏和托盘 |
-| `src-app/dlls/` | Mesa 软件渲染 DLL（opengl32.dll + libgallium_wgl.dll）暂存目录，用于打包完整版压缩包；不入 git，从 [mesa-dist-win](https://github.com/pal1000/mesa-dist-win/releases) 下载 release-msvc 包，取 x64 下两个 DLL 放入 |
+| `src-app/src/ui/sys_icons.rs` | 系统文件图标提取（SHGetFileInfoW），结果列表显示真实彩色文件图标 |
 | `程序说明.md` | 本说明文档，编译期内嵌到 exe 中（`include_str!`） |
 
 ## 运行方式
@@ -169,15 +175,13 @@ src-app/target/release/BJKS.exe
 
 ## 重新构建
 
-如果需要重新编译绿色版：
-
-1. 编译（渲染组件不再内嵌，无需准备 DLL）：
+如果需要重新编译绿色版（无需准备任何 DLL 或渲染组件）：
 
 ```bash
 cd src-app
 cargo build --release
 ```
 
-2. 打包完整版压缩包：从 [mesa-dist-win releases](https://github.com/pal1000/mesa-dist-win/releases) 下载最新 `release-msvc.7z`，取 `x64/opengl32.dll` 与 `x64/libgallium_wgl.dll`，和 `src-app/target/release/BJKS.exe` 放入同一目录后压缩为 zip。
+构建产物 `BJKS.exe` 约 6MB，即完整绿色版，可直接分发。
 
-构建产物 `BJKS.exe` 约 5MB；完整版压缩包（exe + 两个渲染 DLL，zip 压缩后约 21MB）供无显卡/远程桌面环境使用。
+> 历史版本（2.x）曾依赖 Mesa 软件渲染 DLL 并分发完整版压缩包 BJKS-full.zip；3.0.0 起改为纯 CPU 软件渲染，单文件即可，上述步骤不再需要。

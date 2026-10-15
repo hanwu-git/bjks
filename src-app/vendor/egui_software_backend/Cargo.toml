@@ -1,0 +1,32 @@
+# 本文件为 vendored 副本（上游 egui_software_backend 0.0.3，MIT OR Apache-2.0）
+# 精简：移除 examples/tests/dev-dependencies/test_render feature；
+# 本地补丁见 src/winit.rs 中 on_close_requested（支持关闭拦截→最小化到托盘）。
+[package]
+name = "egui_software_backend"
+version = "0.0.3"
+edition = "2024"
+description = "A CPU software render backend for egui (vendored, patched for BJKS)"
+license = "MIT OR Apache-2.0"
+
+[features]
+default = ["std", "winit"]
+log = ["dep:log"]
+raster_stats = ["std"]
+rayon = ["dep:rayon"]
+std = []
+winit = ["dep:winit", "dep:softbuffer", "dep:egui-winit", "dep:bytemuck"]
+
+[lib]
+name = "egui_software_backend"
+path = "src/lib.rs"
+
+[dependencies]
+bytemuck = { version = "1.25", optional = true }
+constify = "0.0.1"
+egui = { version = "0.34", default-features = false }
+egui-winit = { version = "0.34", optional = true, default-features = false }
+log = { version = "0.4", optional = true }
+rayon = { version = "1.11.0", optional = true }
+softbuffer = { version = "0.4", optional = true }
+strength_reduce = "0.2.4"
+winit = { version = "0.30", optional = true }

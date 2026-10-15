@@ -6,35 +6,18 @@ mod logger;
 mod models;
 mod search;
 mod service;
+mod sysicon;
 mod ui;
 
 use config::settings::load_config;
-pub use eframe::egui;
+pub use egui;
+use egui_software_backend::{SoftwareBackendAppConfiguration, run_app_with_software_backend};
 use indexer::enumerate_volumes;
 use indexer::startup::load_or_scan;
 use logger::app_log;
 use search::engine::SearchEngine;
 use service::AppState;
 use ui::BjksApp;
-
-/// 设置 Mesa 软件渲染驱动选择（仅当随包分发的 Mesa DLL 被加载时才生效，走系统 OpenGL 时被忽略）
-/// 必须早于 eframe 启动：默认 d3d12 驱动在无 GPU 环境下初始化会直接退出
-fn set_render_env() {
-    std::env::set_var("GALLIUM_DRIVER", "llvmpipe");
-}
-
-/// 记录随包渲染库状态到日志（仅日志，不做提示或阻断；是否真正需要由 eframe 启动结果决定）
-fn log_mesa_status() {
-    let has_mesa = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .map(|d| d.join("opengl32.dll").exists() && d.join("libgallium_wgl.dll").exists())
-        .unwrap_or(false);
-    app_log(&format!(
-        "随包 Mesa 渲染库{}（缺失时走系统 OpenGL，无可用 GPU 的机器需完整版压缩包）",
-        if has_mesa { "已就位" } else { "未找到" }
-    ));
-}
 
 /// 从嵌入的 ico 加载应用图标（窗口 + 托盘共用）
 pub fn load_app_icon() -> Option<egui::IconData> {
@@ -56,9 +39,7 @@ pub fn load_app_icon() -> Option<egui::IconData> {
 }
 
 fn main() {
-    set_render_env();
-    app_log("=== 应用启动（v2 原生版，无 WebView2） ===");
-    log_mesa_status();
+    app_log("=== 应用启动（v3 纯 CPU 软件渲染版，无外部 DLL / 无 GPU 依赖） ===");
 
     // 1. 加载配置
     let config = load_config();
@@ -96,31 +77,27 @@ fn main() {
         (1200.0, 800.0)
     };
 
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title(format!("本机快搜 v{}", env!("CARGO_PKG_VERSION")))
-        .with_inner_size([w, h])
-        .with_min_inner_size([900.0, 600.0]);
+    let mut settings = SoftwareBackendAppConfiguration::new()
+        .title(Some(format!("本机快搜 v{}", env!("CARGO_PKG_VERSION"))))
+        .inner_size(Some(egui::vec2(w, h)))
+        .min_inner_size(Some(egui::vec2(900.0, 600.0)));
     if let Some(ico) = icon {
-        viewport = viewport.with_icon(std::sync::Arc::new(ico));
+        settings = settings.icon(Some(std::sync::Arc::new(ico)));
     }
 
-    let options = eframe::NativeOptions {
-        viewport,
-        ..Default::default()
-    };
-
-    // 6. 启动 eframe 应用
-    app_log("启动 eframe 应用...");
-    if let Err(e) = eframe::run_native(
-        "BJKS",
-        options,
-        Box::new(move |cc| {
-            ui::theme::install_fonts(&cc.egui_ctx);
-            Ok(Box::new(BjksApp::new(cc, state)))
-        }),
-    ) {
-        // GL 初始化失败（无显卡/远程桌面/虚拟机且无随包渲染库）才提示，独显机器不再误报弹窗
-        app_log(&format!("eframe 启动失败: {}", e));
+    // 6. 启动软件渲染应用（softbuffer 经系统 GDI 呈现，理论上任何 Windows 都可运行）
+    app_log("启动软件渲染应用...");
+    // 工厂类型为 FnMut（编译器按可能多次调用检查），用 RefCell<Option> 保证 state 只被取走一次
+    let state_slot = std::rc::Rc::new(std::cell::RefCell::new(Some(state)));
+    if let Err(e) = run_app_with_software_backend(settings, move |ctx| {
+        let state = state_slot
+            .borrow_mut()
+            .take()
+            .expect("应用工厂被重复调用");
+        ui::theme::install_fonts(&ctx);
+        BjksApp::new(ctx, state)
+    }) {
+        app_log(&format!("应用运行失败: {}", e));
         unsafe {
             use windows_sys::Win32::UI::WindowsAndMessaging::{
                 MessageBoxW, MB_ICONERROR, MB_SETFOREGROUND,
@@ -130,9 +107,8 @@ fn main() {
                 .chain(std::iter::once(0))
                 .collect();
             let text: Vec<u16> = format!(
-                "图形界面初始化失败：{}\n\n\
-本机可能没有可用的 OpenGL（无显卡 / 远程桌面 / 虚拟机）。\n\
-请下载完整版压缩包（BJKS-full.zip），将 BJKS.exe 与 opengl32.dll、libgallium_wgl.dll 放在同一目录后运行。",
+                "程序窗口初始化失败：{}\n\n\
+请尝试重启程序；若反复出现，请重启电脑后重试，或到 GitHub 下载历史版本。",
                 e
             )
             .encode_utf16()

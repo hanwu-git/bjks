@@ -85,6 +85,8 @@ pub struct SearchRequest {
     pub sort_asc: bool,          // 是否升序
     #[serde(default)]
     pub sort_orders: Vec<SortOrder>, // 组合排序（优先使用）
+    #[serde(default)]
+    pub filter_dirs: Vec<String>, // 目录范围筛选（完整路径，以 \ 结尾；空为全盘，多路径任一匹配）
     pub offset: usize,           // 分页偏移
     pub limit: usize,            // 每页数量
 }

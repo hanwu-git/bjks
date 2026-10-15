@@ -1,6 +1,6 @@
 [package]
 name = "BJKS"
-version = "3.0.0"
+version = "3.1.0"
 description = "本机快搜 - Windows 本地文件快速搜索工具（纯 CPU 软件渲染，无外部 DLL、无 GPU 依赖）"
 authors = ["hanwu-git"]
 edition = "2021"
@@ -13,6 +13,8 @@ egui_extras = { version = "0.34", default-features = false }
 egui_software_backend = { path = "vendor/egui_software_backend", features = ["rayon"] }
 # 系统托盘
 tray-icon = "0.19"
+# 原生文件夹选择对话框（目录范围筛选）
+rfd = "0.15"
 # 图标加载（窗口/托盘 ico）
 image = { version = "0.25", default-features = false, features = ["ico", "png"] }
 # 本地时间格式化、系统文件图标（Shell/Gdi）、失败提示框

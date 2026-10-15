@@ -52,6 +52,18 @@ fn type_ext_query(i: usize) -> &'static str {
 enum RowAction {
     OpenFile(String),
     OpenFolder(String),
+    SearchIn(String),
+}
+
+/// 规范化目录范围路径：统一以 `\` 结尾（前缀匹配防误伤，如 C:\Users 不误匹配 C:\Users2）
+fn normalize_filter_dir(raw: &str) -> Option<String> {
+    let d = raw.trim().trim_end_matches('\\');
+    let bytes = d.as_bytes();
+    if d.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        Some(format!("{}\\", d))
+    } else {
+        None
+    }
 }
 
 pub struct BjksApp {
@@ -61,6 +73,8 @@ pub struct BjksApp {
     // 配置缓存
     pub close_action: String,
     pub theme_id: char,
+    /// 当前目录范围筛选标签（多路径 OR；由「📂 范围」按钮 / 右键下钻添加）
+    pub filter_dirs: Vec<String>,
 
     // 搜索状态
     query: String,
@@ -143,6 +157,7 @@ impl BjksApp {
             ctx: ctx.clone(),
             close_action: config.close_action.clone(),
             theme_id,
+            filter_dirs: Vec::new(),
             query: String::new(),
             ext_input: String::new(),
             ext_type: TYPE_ALL,
@@ -203,6 +218,7 @@ impl BjksApp {
                 .unwrap_or(SortField::None),
             sort_asc: self.sort_orders.first().map(|o| o.asc).unwrap_or(true),
             sort_orders: self.sort_orders.clone(),
+            filter_dirs: self.filter_dirs.clone(),
             offset: (self.current_page.saturating_sub(1)) * PAGE_SIZE,
             limit: PAGE_SIZE,
         };
@@ -212,8 +228,8 @@ impl BjksApp {
             engine.search_with_limit(&request, PAGE_SIZE)
         };
         app_log(&format!(
-            "搜索完成: query={}, total={}, page={}, query_time_ms={}",
-            request.query, response.total, self.current_page, response.query_time_ms
+            "搜索完成: query={}, dirs={:?}, total={}, page={}, query_time_ms={}",
+            request.query, request.filter_dirs, response.total, self.current_page, response.query_time_ms
         ));
         self.results = response.results;
         self.total = response.total;
@@ -452,14 +468,34 @@ impl BjksApp {
                         self.do_search();
                     }
 
+                    // 目录范围：弹出系统文件夹选择对话框，加入筛选标签
+                    if ui
+                        .add(
+                            egui::Button::new("📂 范围").min_size(egui::vec2(0.0, BAR_H)),
+                        )
+                        .on_hover_text("选择目录，只在范围内搜索（可叠加多个目录标签）")
+                        .clicked()
+                    {
+                        if let Some(dir) = rfd::FileDialog::new()
+                            .set_title("选择搜索范围目录")
+                            .pick_folder()
+                        {
+                            let dir = dir.to_string_lossy().to_string();
+                            if let Some(norm) = normalize_filter_dir(&dir) {
+                                if !self.filter_dirs.contains(&norm) {
+                                    self.filter_dirs.push(norm);
+                                    self.do_search();
+                                }
+                            }
+                        }
+                    }
+
                     // 搜索框：占据最左侧剩余的全部宽度
                     let resp = ui.add_sized(
                         [ui.available_width().max(120.0), BAR_H],
                         egui::TextEdit::singleline(&mut self.query)
                             .min_size(egui::vec2(0.0, BAR_H))
-                            .hint_text(
-                                "输入关键词搜索文件... (支持多关键词，如: 福建 交流)",
-                            ),
+                            .hint_text("输入关键词搜索文件... (支持多关键词，如: 福建 交流)"),
                     );
                     self.search_has_focus = resp.has_focus();
                     if self.first_frame {
@@ -481,6 +517,64 @@ impl BjksApp {
             }
             self.prev_ext_type = self.ext_type;
         }
+    }
+
+    /// 目录范围筛选标签行（仅在存在标签时显示；top 面板，位于搜索栏与排序栏之间）
+    fn filter_chips_bar(&mut self, ui_root: &mut egui::Ui) {
+        if self.filter_dirs.is_empty() {
+            return;
+        }
+        let c = theme::theme_colors(self.theme_id);
+        egui::Panel::top("filter_chips")
+            .frame(
+                egui::Frame::default()
+                    .fill(c.panel)
+                    .inner_margin(egui::Margin::symmetric(8, 4)),
+            )
+            .show_inside(ui_root, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("范围:").color(c.text_sec));
+                    let dirs = self.filter_dirs.clone();
+                    for dir in dirs {
+                        // 标签：显示最后一级目录名，悬停看完整路径，红 ✕ 移除
+                        let name = dir
+                            .trim_end_matches('\\')
+                            .rsplit(['\\', '/'])
+                            .next()
+                            .unwrap_or(&dir)
+                            .to_string();
+                        egui::Frame::default()
+                            .fill(c.panel_alt)
+                            .corner_radius(8.0)
+                            .inner_margin(egui::Margin::symmetric(6, 2))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(&name).color(c.primary))
+                                        .on_hover_text(&dir);
+                                    if ui
+                                        .small_button(
+                                            egui::RichText::new("✕")
+                                                .small()
+                                                .color(egui::Color32::from_rgb(0xE5, 0x48, 0x4D)),
+                                        )
+                                        .on_hover_text("移除该目录范围")
+                                        .clicked()
+                                    {
+                                        self.filter_dirs.retain(|d| *d != dir);
+                                        self.do_search();
+                                    }
+                                });
+                            });
+                    }
+                    if ui
+                        .small_button(egui::RichText::new("清除全部").color(c.text_sec))
+                        .clicked()
+                    {
+                        self.filter_dirs.clear();
+                        self.do_search();
+                    }
+                });
+            });
     }
 
     fn sort_bar(&mut self, ui_root: &mut egui::Ui) {
@@ -786,6 +880,15 @@ impl BjksApp {
                         RowAction::OpenFolder(p) => {
                             service::open_folder(&p);
                         }
+                        RowAction::SearchIn(dir) => {
+                            // 右键下钻：目录加入范围标签（与按钮同一套筛选），保留关键词重搜
+                            if let Some(norm) = normalize_filter_dir(&dir) {
+                                if !self.filter_dirs.contains(&norm) {
+                                    self.filter_dirs.push(norm);
+                                    self.do_search();
+                                }
+                            }
+                        }
                     }
                 }
                 // 列宽变化：更新并标记待保存
@@ -939,6 +1042,10 @@ fn row_interaction(
             actions.push(RowAction::OpenFolder(entry.path.to_string()));
             ui.close();
         }
+        if entry.is_dir && ui.button("在此目录中搜索").clicked() {
+            actions.push(RowAction::SearchIn(entry.path.to_string()));
+            ui.close();
+        }
         if ui.button("复制路径").clicked() {
             ui.ctx().copy_text(entry.path.to_string());
             ui.close();
@@ -1067,6 +1174,7 @@ impl egui_software_backend::App for BjksApp {
         // 注意：show_inside 模式靠 cursor 流分配空间，所有 top/bottom 面板必须先添加，
         // CentralPanel 最后添加占据中间剩余区域，否则后添加的 bottom 面板会被挤成 0 高
         self.top_bar(ui);
+        self.filter_chips_bar(ui);
         self.sort_bar(ui);
         self.bottom_bar(ui);
 

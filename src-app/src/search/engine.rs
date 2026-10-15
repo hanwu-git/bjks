@@ -85,6 +85,17 @@ impl SearchEngine {
                     })
                 })
                 .filter(|entry| {
+                    // 目录范围筛选：多路径任一前缀匹配（OR），空为全盘
+                    if request.filter_dirs.is_empty() {
+                        true
+                    } else {
+                        request
+                            .filter_dirs
+                            .iter()
+                            .any(|dir| entry.path.starts_with(dir.as_str()))
+                    }
+                })
+                .filter(|entry| {
                     // 扩展名模糊匹配，空则不限制
                     if ext_keywords_lower.is_empty() { return true; }
                     ext_keywords_lower.iter().any(|ext| {
@@ -106,6 +117,17 @@ impl SearchEngine {
                     name_keywords_lower.iter().all(|kw| {
                         contains_ignore_case(&entry.name, kw)
                     })
+                })
+                .filter(|entry| {
+                    // 目录范围筛选：多路径任一前缀匹配（OR），空为全盘
+                    if request.filter_dirs.is_empty() {
+                        true
+                    } else {
+                        request
+                            .filter_dirs
+                            .iter()
+                            .any(|dir| entry.path.starts_with(dir.as_str()))
+                    }
                 })
                 .filter(|entry| {
                     // 扩展名模糊匹配，空则不限制
@@ -232,6 +254,7 @@ mod tests {
         let engine = SearchEngine::new(index);
         
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "福建 交流".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -254,6 +277,7 @@ mod tests {
         
         // 测试扩展名框 jp 匹配 .jpg 和 .jpeg
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: String::new(),
             ext_query: "jp".to_string(),
             only_folders: false,
@@ -276,6 +300,7 @@ mod tests {
         
         // 测试文件名 report + 扩展名 pdf
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "report".to_string(),
             ext_query: "pdf".to_string(),
             only_folders: false,
@@ -297,6 +322,7 @@ mod tests {
         let engine = SearchEngine::new(index);
         
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -317,6 +343,7 @@ mod tests {
         let engine = SearchEngine::new(index);
         
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -337,6 +364,7 @@ mod tests {
         let engine = SearchEngine::new(index);
 
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -361,6 +389,7 @@ mod tests {
         let engine = SearchEngine::new(index);
 
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -385,6 +414,7 @@ mod tests {
         let engine = SearchEngine::new(index);
 
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -409,6 +439,7 @@ mod tests {
         let engine = SearchEngine::new(index);
 
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -433,6 +464,7 @@ mod tests {
         let engine = SearchEngine::new(index);
 
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -455,6 +487,7 @@ mod tests {
         let engine = SearchEngine::new(index);
 
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: String::new(),
             ext_query: String::new(),
             only_folders: false,
@@ -488,6 +521,7 @@ mod tests {
 
         let engine = SearchEngine::new(large_index);
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "file_123".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -527,6 +561,7 @@ mod tests {
         let engine_parallel = SearchEngine::new(index);
 
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "test_5".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -569,6 +604,7 @@ mod tests {
         
         for query in special_queries {
             let request = SearchRequest {
+                    filter_dirs: Vec::new(),
                 query: query.to_string(),
                 ext_query: String::new(),
                 only_folders: false,
@@ -593,6 +629,7 @@ mod tests {
         
         let long_query = "a".repeat(1000);
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: long_query,
             ext_query: String::new(),
             only_folders: false,
@@ -634,6 +671,7 @@ mod tests {
         
         // 搜索中文
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "中文".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -649,6 +687,7 @@ mod tests {
         
         // 搜索 emoji
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "😀".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -671,6 +710,7 @@ mod tests {
         
         // 使用一个会匹配所有路径的查询
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "nonexistent_xyz_123".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -693,6 +733,7 @@ mod tests {
         let engine = SearchEngine::new(vec![]);
         
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "test".to_string(),
             ext_query: String::new(),
             only_folders: false,
@@ -715,6 +756,7 @@ mod tests {
         let engine = SearchEngine::new(index);
         
         let request = SearchRequest {
+                filter_dirs: Vec::new(),
             query: "".to_string(),
             ext_query: String::new(),
             only_folders: false,

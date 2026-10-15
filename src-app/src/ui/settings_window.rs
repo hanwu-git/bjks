@@ -17,12 +17,14 @@ impl BjksApp {
         if !self.show_settings {
             return;
         }
-        // 打开时载入配置副本
+        // 打开时载入配置副本 + 快照（关闭时对比是否有未保存修改）
         if self.settings_edit.is_none() {
             self.settings_edit = Some(service::get_config());
+            self.settings_snapshot = Some(service::get_config());
             self.drives_cache = service::list_volumes();
             self.theme_before = self.theme_id;
             self.rescan_confirm = false;
+            self.show_discard_confirm = false;
             self.exclude_input_path.clear();
             self.exclude_input_pattern.clear();
             self.exclude_input_extension.clear();
@@ -40,15 +42,78 @@ impl BjksApp {
             .show(ctx, |ui| {
                 self.settings_content(ui);
             });
+
+        // 用户点 X 关闭：有未保存修改则弹「放弃修改？」确认，并保持设置窗打开
+        if !open_flag && self.show_discard_confirm {
+            // 放弃确认弹窗已打开（放弃按钮在下方处理），维持设置窗
+            open_flag = true;
+        } else if !open_flag && !self.is_settings_clean() {
+            self.show_discard_confirm = true;
+            open_flag = true;
+        }
         self.show_settings = open_flag;
 
-        // 关闭（未保存）时还原打开前的配色预览
+        // 「放弃修改？」确认弹窗（居中）
+        if self.show_discard_confirm {
+            let mut discard = false;
+            let mut keep = false;
+            egui::Window::new(RichText::new("放弃修改？").strong())
+                .resizable(false)
+                .collapsible(false)
+                .pivot(egui::Align2::CENTER_CENTER)
+                .default_pos(ctx.screen_rect().center())
+                .show(ctx, |ui| {
+                    let c = theme::theme_colors(self.theme_id);
+                    ui.label("设置尚未保存，确定放弃本次修改并关闭？");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("放弃修改").color(egui::Color32::WHITE),
+                                )
+                                .fill(c.danger),
+                            )
+                            .clicked()
+                        {
+                            discard = true;
+                        }
+                        if ui.button("继续编辑").clicked() {
+                            keep = true;
+                        }
+                    });
+                });
+            if discard {
+                // 放弃：关闭窗口，还原主题预览与快照（下方关闭分支统一清理）
+                self.show_discard_confirm = false;
+                self.show_settings = false;
+                self.settings_edit = None;
+                if self.theme_id != self.theme_before {
+                    self.theme_id = self.theme_before;
+                    theme::apply(ctx, self.theme_id);
+                }
+            } else if keep {
+                self.show_discard_confirm = false;
+            }
+        }
+
+        // 真正关闭（保存 / 重建索引 / 放弃）时清理与还原配色
         if !self.show_settings {
             self.settings_edit = None;
+            self.settings_snapshot = None;
+            self.show_discard_confirm = false;
             if self.theme_id != self.theme_before {
                 self.theme_id = self.theme_before;
                 theme::apply(ctx, self.theme_id);
             }
+        }
+    }
+
+    /// 设置内容是否有未保存修改（对比打开时的快照）
+    fn is_settings_clean(&self) -> bool {
+        match (&self.settings_edit, &self.settings_snapshot) {
+            (Some(edit), Some(snap)) => edit == snap,
+            _ => true,
         }
     }
 
@@ -207,13 +272,13 @@ impl BjksApp {
                     ui,
                     "path",
                     "📂 屏蔽目录",
-                    "请输入要屏蔽的目录路径（如 C:\\Windows）",
+                    "点击「选择目录」添加要屏蔽的目录（含子目录）",
                 );
                 self.exclude_section(
                     ui,
                     "pattern",
-                    "📄 屏蔽文件模式",
-                    "请输入要屏蔽的文件模式（如 *.tmp）",
+                    "📄 屏蔽文件",
+                    "点击「选择文件」屏蔽所选文件（按文件名屏蔽，所有同名文件一并屏蔽）",
                 );
                 self.exclude_section(
                     ui,
@@ -224,11 +289,11 @@ impl BjksApp {
             });
     }
 
-    /// 屏蔽项分组：列表 + 删除按钮 + 添加输入框（借用安全：输入值先取出，用后写回）
+    /// 屏蔽项分组：列表 + 删除按钮；目录/文件用系统对话框选择，扩展名保留手工输入
     fn exclude_section(&mut self, ui: &mut egui::Ui, kind: &str, title: &str, hint: &str) {
         let c = theme::theme_colors(self.theme_id);
 
-        // 取出输入缓冲（避免与 self 借用冲突）
+        // 取出输入缓冲（避免与 self 借用冲突；仅扩展名组使用）
         let mut input_val = match kind {
             "path" => std::mem::take(&mut self.exclude_input_path),
             "pattern" => std::mem::take(&mut self.exclude_input_pattern),
@@ -250,7 +315,7 @@ impl BjksApp {
         ui.separator();
         ui.heading(RichText::new(title).size(14.0));
         let mut remove_idx: Option<usize> = None;
-        let mut add_value: Option<String> = None;
+        let mut add_values: Vec<String> = Vec::new();
 
         egui::ScrollArea::vertical()
             .id_salt(format!("exclude_scroll_{}", kind))
@@ -274,19 +339,64 @@ impl BjksApp {
                     });
                 }
             });
-        ui.horizontal(|ui| {
-            let resp =
-                ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut input_val).hint_text(hint));
-            if ui.button("+ 添加").clicked()
-                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+
+        if kind == "extension" {
+            // 扩展名：手工输入（Enter 或按钮添加）
+            ui.horizontal(|ui| {
+                let resp = ui.add_sized(
+                    [240.0, 22.0],
+                    egui::TextEdit::singleline(&mut input_val).hint_text(hint),
+                );
+                if ui.button("+ 添加").clicked()
+                    || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                {
+                    let value = input_val.trim().to_string();
+                    if !value.is_empty() {
+                        add_values.push(value);
+                        input_val.clear();
+                    }
+                }
+            });
+        } else if kind == "path" {
+            // 目录：系统文件夹选择对话框（支持多选）
+            if ui
+                .button("📂 选择目录")
+                .on_hover_text("在弹出的文件夹选择窗口中选择要屏蔽的目录，可按住 Ctrl 多选")
+                .clicked()
             {
-                let value = input_val.trim().to_string();
-                if !value.is_empty() {
-                    add_value = Some(value);
-                    input_val.clear();
+                if let Some(dirs) = rfd::FileDialog::new()
+                    .set_title("选择要屏蔽的目录")
+                    .pick_folders()
+                {
+                    for d in dirs {
+                        let s = d.to_string_lossy().trim_end_matches('\\').to_string();
+                        if !s.is_empty() {
+                            add_values.push(s);
+                        }
+                    }
                 }
             }
-        });
+        } else {
+            // 文件：系统文件选择对话框（支持多选；按文件名屏蔽）
+            if ui
+                .button("📄 选择文件")
+                .on_hover_text("在弹出的文件选择窗口中选择要屏蔽的文件，可按住 Ctrl 多选；按文件名屏蔽，所有同名文件一并屏蔽")
+                .clicked()
+            {
+                if let Some(files) = rfd::FileDialog::new()
+                    .set_title("选择要屏蔽的文件")
+                    .pick_files()
+                {
+                    for f in files {
+                        // 存文件名：匹配逻辑对文件名做通配/精确匹配
+                        if let Some(name) = f.file_name().and_then(|n| n.to_str()) {
+                            add_values.push(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        ui.label(RichText::new(hint).small().color(c.text_sec));
 
         // 输入缓冲写回
         match kind {
@@ -296,7 +406,7 @@ impl BjksApp {
         }
 
         // 写回设置副本
-        if remove_idx.is_some() || add_value.is_some() {
+        if remove_idx.is_some() || !add_values.is_empty() {
             if let Some(cfg) = self.settings_edit.as_mut() {
                 let target = match kind {
                     "path" => Some(&mut cfg.excluded_paths),
@@ -310,7 +420,7 @@ impl BjksApp {
                             list.remove(i);
                         }
                     }
-                    if let Some(value) = add_value {
+                    for value in add_values {
                         if !list.contains(&value) {
                             list.push(value);
                         }

@@ -108,6 +108,10 @@ pub struct BjksApp {
     pub show_about: bool,
     pub show_readme: bool,
     pub settings_edit: Option<crate::models::AppConfig>,
+    /// 打开设置时的配置快照（关闭时对比，有未保存修改则提示放弃）
+    pub settings_snapshot: Option<crate::models::AppConfig>,
+    /// 「放弃修改？」确认弹窗显示中
+    pub show_discard_confirm: bool,
     pub settings_error: Option<String>,
     pub drives_cache: Vec<String>,
     pub theme_before: char,
@@ -184,6 +188,8 @@ impl BjksApp {
             show_about: false,
             show_readme: false,
             settings_edit: None,
+            settings_snapshot: None,
+            show_discard_confirm: false,
             settings_error: None,
             drives_cache: Vec::new(),
             theme_before: theme_id,

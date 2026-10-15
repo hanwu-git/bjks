@@ -10,7 +10,7 @@ pub struct FileEntry {
     pub is_dir: bool,         // 是否为目录
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub excluded_paths: Vec<String>,       // 排除的目录路径
     pub excluded_file_patterns: Vec<String>, // 排除的文件名模式（glob）

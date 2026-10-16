@@ -1,6 +1,6 @@
 [package]
 name = "BJKS"
-version = "3.2.0"
+version = "3.3.0"
 description = "本机快搜 - Windows 本地文件快速搜索工具（纯 CPU 软件渲染，无外部 DLL、无 GPU 依赖）"
 authors = ["hanwu-git"]
 edition = "2021"

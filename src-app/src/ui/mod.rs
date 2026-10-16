@@ -722,7 +722,11 @@ impl BjksApp {
                     .striped(true)
                     .resizable(true)
                     .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                    .column(Column::exact(self.col_widths[0]).resizable(false))
+                    .column(
+                        Column::initial(self.col_widths[0])
+                            .resizable(true)
+                            .range(24.0..=120.0),
+                    )
                     .column(
                         Column::exact(self.col_widths[1])
                             .resizable(false)

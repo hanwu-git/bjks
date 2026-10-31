@@ -39,7 +39,44 @@ pub fn load_app_icon() -> Option<egui::IconData> {
 }
 
 fn main() {
+    // release 构建为 panic=abort（进程直接终止、无栈回溯），用钩子把 panic 位置落盘
+    std::panic::set_hook(Box::new(|info| {
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "未知 panic".to_string());
+        let loc = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "未知位置".to_string());
+        logger::app_log(&format!("✗ 崩溃（panic）：{} @ {}", msg, loc));
+    }));
+
     app_log("=== 应用启动（v3 纯 CPU 软件渲染版，无外部 DLL / 无 GPU 依赖） ===");
+
+    // 离线压测模式：BJKS.exe --cache-bench [缓存库路径]，验证增量写回链路（无需管理员）
+    if let Some(pos) = std::env::args().position(|a| a == "--cache-bench") {
+        let default_db = logger::app_data_dir()
+            .join(indexer::CACHE_FILE)
+            .to_string_lossy()
+            .to_string();
+        let db = std::env::args().nth(pos + 1).unwrap_or(default_db);
+        let code = indexer::cache_bench::run(&db);
+        app_log(&format!("缓存压测结束，退出码 {}", code));
+        std::process::exit(code);
+    }
+
+    // 自检模式：BJKS.exe --usn-selftest [盘符] 验证 USN 增量链路（需管理员权限）后退出
+    if let Some(pos) = std::env::args().position(|a| a == "--usn-selftest") {
+        let drive = std::env::args()
+            .nth(pos + 1)
+            .unwrap_or_else(|| "C:".to_string());
+        let code = indexer::usn_selftest::run(&drive);
+        app_log(&format!("USN 自检结束，退出码 {}", code));
+        std::process::exit(code);
+    }
 
     // 1. 加载配置
     let config = load_config();
@@ -52,7 +89,8 @@ fn main() {
         volumes.len(),
         volumes.iter().map(|v| &v.drive_letter).collect::<Vec<_>>()
     ));
-    let (entries, needs_refresh) = load_or_scan(&config.scan_drives);
+    let (entries, needs_refresh) =
+        load_or_scan(&config.scan_drives, config.cache_expiry_hours as u64);
     let entry_count = entries.len();
     app_log(&format!("初始索引包含 {} 个文件", entry_count));
 
@@ -66,6 +104,8 @@ fn main() {
     if needs_refresh {
         state.spawn_background_scan(volumes, config.clone());
     }
+    // 运行中索引自动更新（USN 增量；周期 0=关闭，线程内每轮重读设置）
+    state.spawn_auto_update();
 
     // 4. 窗口图标
     let icon = load_app_icon();

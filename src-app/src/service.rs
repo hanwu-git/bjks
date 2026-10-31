@@ -16,6 +16,8 @@ pub struct AppState {
     pub is_scanning: Arc<Mutex<bool>>,
     pub scanned_files: Arc<Mutex<usize>>,
     pub progress: Arc<Mutex<ScanProgress>>,
+    /// 各卷 USN 增量更新状态（FRN 路径平表 + 游标），watcher 线程专用
+    pub frn_maps: crate::indexer::watcher::FrnMaps,
 }
 
 impl AppState {
@@ -32,6 +34,7 @@ impl AppState {
             is_scanning: Arc::new(Mutex::new(needs_refresh)),
             scanned_files: Arc::new(Mutex::new(entry_count)),
             progress: Arc::new(Mutex::new(progress)),
+            frn_maps: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -75,6 +78,14 @@ impl AppState {
             Arc::clone(&self.scanned_files),
             Arc::clone(&self.is_scanning),
             Arc::clone(&self.progress),
+        );
+    }
+
+    /// 启动 USN 增量自动更新线程（周期见设置 auto_update_minutes，0=关闭）
+    pub fn spawn_auto_update(&self) {
+        crate::indexer::watcher::spawn_auto_update(
+            self.clone(),
+            Arc::clone(&self.frn_maps),
         );
     }
 

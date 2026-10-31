@@ -132,11 +132,11 @@ pub fn apply(ctx: &egui::Context, id: char) {
     v.widgets.active.bg_fill = c.row_hover;
     v.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, c.primary);
 
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
     style.visuals = v;
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
     style.spacing.button_padding = egui::vec2(8.0, 4.0);
-    ctx.set_style(style);
+    ctx.set_global_style(style);
 }
 
 /// 全局字体安装：中文字体运行时加载（微软雅黑等系统字体），egui 默认字体不含 CJK

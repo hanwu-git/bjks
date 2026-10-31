@@ -1,6 +1,13 @@
 pub mod mft_scanner;
 pub mod cache;
+pub mod cache_bench;
 pub mod startup;
+pub mod usn;
+pub mod usn_selftest;
+pub mod watcher;
+
+/// 缓存文件名（startup 与 watcher 共用）
+pub const CACHE_FILE: &str = "file_index_v2.db";
 
 use serde::{Serialize, Deserialize};
 use std::fs;

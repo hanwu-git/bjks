@@ -33,14 +33,15 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 }
 
 /// 扫描排除规则：目录路径、文件名通配模式、扩展名
-struct ScanFilter {
+/// 全量扫描与 USN 增量更新共用同一套规则，避免增量把被屏蔽的系统目录灌进索引
+pub struct ScanFilter {
     paths: Vec<String>,
     patterns: Vec<String>,
     extensions: Vec<String>,
 }
 
 impl ScanFilter {
-    fn from_config(config: &AppConfig) -> Self {
+    pub fn from_config(config: &AppConfig) -> Self {
         Self {
             paths: config
                 .excluded_paths
@@ -61,31 +62,38 @@ impl ScanFilter {
         }
     }
 
-    fn is_excluded(&self, entry: &DirEntry) -> bool {
-        let path = entry.path();
-
-        let path_str = path.to_string_lossy().to_lowercase();
+    /// 按完整路径判断是否被屏蔽（增量更新用：只有路径没有 DirEntry）
+    pub fn excludes_path(&self, path: &str, is_dir: bool) -> bool {
+        let path_str = path.to_lowercase();
         if self.paths.iter().any(|p| path_str.contains(p.as_str())) {
             return true;
         }
 
-        if let Some(name) = entry.file_name().to_str() {
-            let name_lower = name.to_lowercase();
-            if self.patterns.iter().any(|p| wildcard_match(p, &name_lower)) {
-                return true;
-            }
+        let name_lower = path
+            .rsplit('\\')
+            .next()
+            .unwrap_or(path)
+            .to_lowercase();
+        if self.patterns.iter().any(|p| wildcard_match(p, &name_lower)) {
+            return true;
         }
 
-        if !entry.file_type().is_dir() {
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                let ext_lower = ext.to_lowercase();
-                if self.extensions.iter().any(|e| e == &ext_lower) {
+        if !is_dir {
+            if let Some((_, ext)) = name_lower.rsplit_once('.') {
+                if !ext.is_empty() && self.extensions.iter().any(|e| e == ext) {
                     return true;
                 }
             }
         }
 
         false
+    }
+
+    fn is_excluded(&self, entry: &DirEntry) -> bool {
+        self.excludes_path(
+            &entry.path().to_string_lossy(),
+            entry.file_type().is_dir(),
+        )
     }
 }
 

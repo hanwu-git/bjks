@@ -1,6 +1,6 @@
 [package]
 name = "BJKS"
-version = "3.3.0"
+version = "3.4.0"
 description = "本机快搜 - Windows 本地文件快速搜索工具（纯 CPU 软件渲染，无外部 DLL、无 GPU 依赖）"
 authors = ["hanwu-git"]
 edition = "2021"
@@ -18,7 +18,7 @@ rfd = "0.15"
 # 图标加载（窗口/托盘 ico）
 image = { version = "0.25", default-features = false, features = ["ico", "png"] }
 # 本地时间格式化、系统文件图标（Shell/Gdi）、失败提示框
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Time", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Time", "Win32_System_IO", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }

@@ -47,6 +47,78 @@ impl SearchEngine {
         Self { index }
     }
 
+    /// 应用 USN 增量变更（新增 / 删除 / 改名），返回受影响的条目数。
+    ///
+    /// - `add`：新文件条目（直接追加）
+    /// - `remove`：要删除的完整路径集合
+    /// - `rename`：旧路径 → (新父目录完整路径, 新文件名, 是否目录)。文件改名精确匹配旧路径；
+    ///   目录改名按前缀重写整棵子树（只有目录改名才做前缀扫描，避免改名风暴下的 O(n*m)）
+    pub fn apply_changes(
+        &mut self,
+        add: Vec<FileEntry>,
+        remove: &std::collections::HashSet<String>,
+        rename: &std::collections::HashMap<String, (String, String, bool)>,
+    ) -> usize {
+        let mut changed = 0usize;
+
+        // 1. 改名：精确匹配（文件）+ 前缀重写（目录子树）
+        if !rename.is_empty() {
+            // 预计算目录改名前缀表（前缀字符串只生成一次）
+            let mut dir_prefixes: Vec<(String, String)> = Vec::new();
+            for (old, (new_dir, new_name, is_dir)) in rename.iter() {
+                if *is_dir {
+                    dir_prefixes.push((
+                        format!("{}\\", old),
+                        format!("{}\\{}\\", new_dir, new_name),
+                    ));
+                }
+            }
+            for entry in self.index.iter_mut() {
+                if let Some((new_dir, new_name, _)) = rename.get(entry.path.as_ref()) {
+                    // 文件/目录本身：路径替换为 new_dir 拼接 new_name
+                    let new_path = format!("{}\\{}", new_dir, new_name);
+                    entry.path = new_path.into_boxed_str();
+                    entry.name = new_name.as_str().into();
+                    // 扩展名重算（目录扩展名为空）
+                    entry.extension = if entry.is_dir || new_name.is_empty() {
+                        "".into()
+                    } else {
+                        match new_name.rfind('.') {
+                            Some(pos) => new_name[pos + 1..].to_lowercase().into_boxed_str(),
+                            None => "".into(),
+                        }
+                    };
+                    changed += 1;
+                } else if !dir_prefixes.is_empty() {
+                    // 目录改名：子项按前缀重写（新路径 = 新父目录\新名\原子路径剩余部分）
+                    for (old_prefix, new_prefix) in &dir_prefixes {
+                        if entry.path.starts_with(old_prefix.as_str()) {
+                            entry.path = format!("{}{}", new_prefix, &entry.path[old_prefix.len()..])
+                                .into_boxed_str();
+                            changed += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. 删除
+        if !remove.is_empty() {
+            let before = self.index.len();
+            self.index.retain(|e| !remove.contains(e.path.as_ref()));
+            changed += before - self.index.len();
+        }
+
+        // 3. 新增
+        if !add.is_empty() {
+            changed += add.len();
+            self.index.extend(add);
+        }
+
+        changed
+    }
+
     /// 按请求内嵌上限搜索（供测试与兼容调用）
     #[allow(dead_code)]
     pub fn search(&self, request: &SearchRequest) -> SearchResponse {
@@ -770,5 +842,230 @@ mod tests {
         let response = engine.search(&request);
         assert_eq!(response.results.len(), 0);
         assert_eq!(response.total, 5); // 总数应该正确
+    }
+
+    // ========== USN 增量更新（apply_changes）测试 ==========
+
+    #[test]
+    fn test_apply_changes_add() {
+        let engine_orig = SearchEngine::new(create_test_index());
+        let mut engine = SearchEngine::new(create_test_index());
+
+        let add = vec![FileEntry {
+            name: "新文件.txt".into(),
+            path: "D:\\Documents\\新文件.txt".into(),
+            extension: "txt".into(),
+            size: 128,
+            modified: 1700000500,
+            is_dir: false,
+        }];
+        let remove = std::collections::HashSet::new();
+        let rename = std::collections::HashMap::new();
+
+        let changed = engine.apply_changes(add, &remove, &rename);
+        assert_eq!(changed, 1);
+        assert_eq!(
+            engine.get_index_count(),
+            engine_orig.get_index_count() + 1
+        );
+
+        // 新文件可被搜到
+        let request = SearchRequest {
+            filter_dirs: Vec::new(),
+            query: "新文件".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+        let response = engine.search(&request);
+        assert_eq!(response.total, 1);
+        assert_eq!(response.results[0].name.as_ref(), "新文件.txt");
+    }
+
+    #[test]
+    fn test_apply_changes_remove() {
+        let mut engine = SearchEngine::new(create_test_index());
+
+        let mut remove = std::collections::HashSet::new();
+        remove.insert("F:\\Photos\\照片.jpg".to_string());
+        remove.insert("G:\\Reports\\report.pdf".to_string());
+        let rename = std::collections::HashMap::new();
+
+        let changed = engine.apply_changes(vec![], &remove, &rename);
+        assert_eq!(changed, 2);
+        assert_eq!(engine.get_index_count(), 3);
+
+        // 已删除的路径不再能搜到
+        let request = SearchRequest {
+            filter_dirs: Vec::new(),
+            query: "照片".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+        assert_eq!(engine.search(&request).total, 0);
+    }
+
+    #[test]
+    fn test_apply_changes_file_rename() {
+        let mut engine = SearchEngine::new(create_test_index());
+
+        let mut rename = std::collections::HashMap::new();
+        // E:\Work\福建交流纪要.pdf → E:\Work\交流纪要终稿.pdf
+        rename.insert(
+            "E:\\Work\\福建交流纪要.pdf".to_string(),
+            ("E:\\Work".to_string(), "交流纪要终稿.PDF".to_string(), false),
+        );
+
+        let changed = engine.apply_changes(
+            vec![],
+            &std::collections::HashSet::new(),
+            &rename,
+        );
+        assert_eq!(changed, 1);
+        assert_eq!(engine.get_index_count(), 5);
+
+        // 旧名「福建交流纪要」搜不到（新名与其他条目均不含），新名关键词「终稿」能搜到，
+        // 且扩展名已重算为小写
+        let old_req = SearchRequest {
+            filter_dirs: Vec::new(),
+            query: "福建交流纪要".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+        let new_req = SearchRequest {
+            filter_dirs: Vec::new(),
+            query: "终稿".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+        assert_eq!(engine.search(&old_req).total, 0);
+        let resp = engine.search(&new_req);
+        assert_eq!(resp.total, 1);
+        assert_eq!(resp.results[0].path.as_ref(), "E:\\Work\\交流纪要终稿.PDF");
+        assert_eq!(resp.results[0].name.as_ref(), "交流纪要终稿.PDF");
+        assert_eq!(resp.results[0].extension.as_ref(), "pdf");
+    }
+
+    #[test]
+    fn test_apply_changes_dir_rename_prefix_rewrite() {
+        // 索引含一个目录与其子文件
+        let index = vec![
+            FileEntry {
+                name: "Photos".into(),
+                path: "F:\\Photos".into(),
+                extension: "".into(),
+                size: 0,
+                modified: 1700000000,
+                is_dir: true,
+            },
+            FileEntry {
+                name: "照片.jpg".into(),
+                path: "F:\\Photos\\照片.jpg".into(),
+                extension: "jpg".into(),
+                size: 512,
+                modified: 1700000200,
+                is_dir: false,
+            },
+            FileEntry {
+                name: "图片.jpeg".into(),
+                path: "F:\\Photos\\图片.jpeg".into(),
+                extension: "jpeg".into(),
+                size: 768,
+                modified: 1700000300,
+                is_dir: false,
+            },
+            FileEntry {
+                name: "无关.txt".into(),
+                path: "F:\\Other\\无关.txt".into(),
+                extension: "txt".into(),
+                size: 64,
+                modified: 1700000400,
+                is_dir: false,
+            },
+        ];
+        let mut engine = SearchEngine::new(index);
+
+        let mut rename = std::collections::HashMap::new();
+        // 目录改名：F:\Photos → F:\MyPictures
+        rename.insert(
+            "F:\\Photos".to_string(),
+            ("F:".to_string(), "MyPictures".to_string(), true),
+        );
+
+        let changed = engine.apply_changes(
+            vec![],
+            &std::collections::HashSet::new(),
+            &rename,
+        );
+        // 目录本身 + 2 个子项都被重写
+        assert_eq!(changed, 3);
+
+        // 目录名可搜到
+        let dir_req = SearchRequest {
+            filter_dirs: Vec::new(),
+            query: "MyPictures".to_string(),
+            ext_query: String::new(),
+            only_folders: true,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+        let resp = engine.search(&dir_req);
+        assert_eq!(resp.total, 1);
+        assert_eq!(resp.results[0].path.as_ref(), "F:\\MyPictures");
+        assert_eq!(resp.results[0].extension.as_ref(), "");
+
+        // 子项路径前缀已重写
+        let sub_req = SearchRequest {
+            filter_dirs: Vec::new(),
+            query: "照片".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+        let resp = engine.search(&sub_req);
+        assert_eq!(resp.total, 1);
+        assert_eq!(resp.results[0].path.as_ref(), "F:\\MyPictures\\照片.jpg");
+
+        // 无关条目不受影响
+        let other_req = SearchRequest {
+            filter_dirs: Vec::new(),
+            query: "无关".to_string(),
+            ext_query: String::new(),
+            only_folders: false,
+            sort_by: SortField::None,
+            sort_asc: true,
+            sort_orders: vec![],
+            offset: 0,
+            limit: 100,
+        };
+        let resp = engine.search(&other_req);
+        assert_eq!(resp.total, 1);
+        assert_eq!(resp.results[0].path.as_ref(), "F:\\Other\\无关.txt");
     }
 }

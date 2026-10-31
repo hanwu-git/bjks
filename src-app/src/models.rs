@@ -27,6 +27,20 @@ pub struct AppConfig {
     pub column_widths: Vec<u32>,
     #[serde(default = "default_theme")]     // 界面配色：a 青岚（浅色）/ b 暗夜（深色）/ c 暖沙（暖色）
     pub theme: String,
+    #[serde(default = "default_cache_expiry_hours")] // 索引缓存有效期（小时），启动超过该时长则全量重建
+    pub cache_expiry_hours: u32,
+    #[serde(default = "default_auto_update_minutes")] // 运行中自动更新间隔（分钟，0=关闭）：USN 增量检查周期
+    pub auto_update_minutes: u32,
+}
+
+/// 索引缓存有效期默认 24 小时，兼容旧配置文件缺字段的情况
+fn default_cache_expiry_hours() -> u32 {
+    24
+}
+
+/// 运行中自动更新默认 5 分钟，兼容旧配置文件缺字段的情况
+fn default_auto_update_minutes() -> u32 {
+    5
 }
 
 /// 界面配色默认值：方案 A 青岚，兼容旧配置文件缺字段的情况
@@ -66,6 +80,8 @@ impl Default for AppConfig {
             close_action: default_close_action(),
             column_widths: vec![],
             theme: default_theme(),
+            cache_expiry_hours: default_cache_expiry_hours(),
+            auto_update_minutes: default_auto_update_minutes(),
         }
     }
 }

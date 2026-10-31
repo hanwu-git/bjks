@@ -38,7 +38,7 @@ impl BjksApp {
             .collapsible(false)
             .default_width(460.0)
             .pivot(egui::Align2::CENTER_CENTER)
-            .default_pos(ctx.screen_rect().center())
+            .default_pos(ctx.viewport_rect().center())
             .show(ctx, |ui| {
                 self.settings_content(ui);
             });
@@ -61,7 +61,7 @@ impl BjksApp {
                 .resizable(false)
                 .collapsible(false)
                 .pivot(egui::Align2::CENTER_CENTER)
-                .default_pos(ctx.screen_rect().center())
+                .default_pos(ctx.viewport_rect().center())
                 .show(ctx, |ui| {
                     let c = theme::theme_colors(self.theme_id);
                     ui.label("设置尚未保存，确定放弃本次修改并关闭？");
@@ -173,7 +173,7 @@ impl BjksApp {
         ui.separator();
 
         // ---- 内容区：高度限制在屏幕内（预留标题栏/顶栏/边距），超出部分内部滚动 ----
-        let max_h = (ui.ctx().screen_rect().height() - 180.0).max(240.0);
+        let max_h = (ui.ctx().content_rect().height() - 180.0).max(240.0);
         egui::ScrollArea::vertical()
             .auto_shrink([false, true])
             .max_height(max_h)
@@ -262,6 +262,34 @@ impl BjksApp {
                 ui.label(
                     RichText::new(
                         "只有勾选的盘符参与索引，默认 C 盘和 D 盘。修改后保存，再点「重建索引」生效。",
+                    )
+                    .small()
+                    .color(c.text_sec),
+                );
+                ui.separator();
+
+                // ---- 索引自动更新 ----
+                ui.heading(RichText::new("🔄 索引自动更新").size(14.0));
+                if let Some(cfg) = self.settings_edit.as_mut() {
+                    ui.horizontal(|ui| {
+                        ui.label("缓存有效期：");
+                        ui.add(
+                            egui::DragValue::new(&mut cfg.cache_expiry_hours)
+                                .range(1..=8760)
+                                .suffix(" 小时"),
+                        );
+                        ui.separator();
+                        ui.label("自动更新间隔：");
+                        ui.add(
+                            egui::DragValue::new(&mut cfg.auto_update_minutes)
+                                .range(0..=1440)
+                                .suffix(" 分钟"),
+                        );
+                    });
+                }
+                ui.label(
+                    RichText::new(
+                        "启动时缓存超过「有效期」则自动全量重建（默认 24 小时）；程序运行中每隔「自动更新间隔」读取 NTFS 变更日志（USN）增量更新索引，0 表示关闭运行中更新（默认 5 分钟）。",
                     )
                     .small()
                     .color(c.text_sec),

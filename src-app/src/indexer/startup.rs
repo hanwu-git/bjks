@@ -1,6 +1,6 @@
 use crate::indexer::cache::IndexCache;
 use crate::indexer::mft_scanner::scan_volume_fast_with_progress;
-use crate::indexer::{normalize_drive, VolumeInfo};
+use crate::indexer::{normalize_drive, VolumeInfo, CACHE_FILE};
 use crate::logger::{app_data_dir, app_log};
 use crate::models::{AppConfig, FileEntry, ScanProgress};
 use crate::search::engine::SearchEngine;
@@ -11,16 +11,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const CACHE_FILE: &str = "file_index_v2.db";
-const CACHE_EXPIRY_HOURS: u64 = 24;
-
 /// 获取缓存文件路径
 fn get_cache_path() -> PathBuf {
     app_data_dir().join(CACHE_FILE)
 }
 
-/// 检查缓存是否有效
-fn is_cache_valid(cache_path: &PathBuf) -> bool {
+/// 检查缓存是否有效（有效期由设置 cache_expiry_hours 控制，默认 24 小时）
+fn is_cache_valid(cache_path: &PathBuf, expiry_hours: u64) -> bool {
     if !cache_path.exists() {
         return false;
     }
@@ -33,7 +30,7 @@ fn is_cache_valid(cache_path: &PathBuf) -> bool {
                     .unwrap()
                     .as_secs();
                 let cache_age_hours = (now - duration.as_secs()) / 3600;
-                return cache_age_hours < CACHE_EXPIRY_HOURS;
+                return cache_age_hours < expiry_hours;
             }
         }
     }
@@ -102,13 +99,16 @@ fn normalize_drive_list(drives: &str) -> Vec<String> {
 
 /// 启动流程：优先加载缓存让窗口立即显示，需要时后台刷新
 /// 返回 (索引条目, 是否正在后台刷新)
-/// 缓存有效需同时满足：未超过 24 小时，且缓存记录的盘符与当前勾选的盘符一致
-pub fn load_or_scan(current_drives: &[String]) -> (Vec<FileEntry>, bool) {
+/// 缓存有效需同时满足：未超过设置的有效期（默认 24 小时），且缓存记录的盘符与当前勾选的盘符一致
+pub fn load_or_scan(current_drives: &[String], expiry_hours: u64) -> (Vec<FileEntry>, bool) {
     let cache_path = get_cache_path();
     app_log(&format!("缓存路径: {:?}", cache_path));
 
-    let cache_valid = is_cache_valid(&cache_path);
-    app_log(&format!("缓存是否有效: {}", cache_valid));
+    let cache_valid = is_cache_valid(&cache_path, expiry_hours);
+    app_log(&format!(
+        "缓存是否有效: {}（有效期 {} 小时）",
+        cache_valid, expiry_hours
+    ));
 
     // 优先加载缓存（即使过期也加载，保证窗口快速显示）
     let loaded = load_cache_with_meta(&cache_path);

@@ -1,6 +1,25 @@
 use rusqlite::{Connection, params};
 use crate::models::FileEntry;
 
+/// 缓存表结构。
+/// path 索引是增量更新的性能关键：删除/改名都按完整路径定位，
+/// 缺少 idx_path 时每次操作都会退化为 27 万行全表扫描，批量变更会把进程拖死。
+const SCHEMA_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS file_index (
+        name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        extension TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified INTEGER NOT NULL,
+        is_dir INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_extension ON file_index(extension);
+    CREATE INDEX IF NOT EXISTS idx_path ON file_index(path);
+    CREATE TABLE IF NOT EXISTS cache_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );";
+
 pub struct IndexCache {
     conn: Connection,
 }
@@ -9,25 +28,13 @@ impl IndexCache {
     pub fn open(path: &str) -> Result<Self, String> {
         let conn = Connection::open(path)
             .map_err(|e| e.to_string())?;
+        // 打开即确保表结构与索引存在（旧缓存库会自动补建 idx_path）
+        conn.execute_batch(SCHEMA_SQL).map_err(|e| e.to_string())?;
         Ok(Self { conn })
     }
 
     pub fn create_table(&self) -> Result<(), String> {
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS file_index (
-                name TEXT NOT NULL,
-                path TEXT NOT NULL,
-                extension TEXT NOT NULL,
-                size INTEGER NOT NULL,
-                modified INTEGER NOT NULL,
-                is_dir INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_extension ON file_index(extension);
-            CREATE TABLE IF NOT EXISTS cache_meta (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );"
-        ).map_err(|e| e.to_string())?;
+        self.conn.execute_batch(SCHEMA_SQL).map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -101,6 +108,78 @@ impl IndexCache {
         .collect();
 
         Ok(entries)
+    }
+
+    /// 把 USN 增量变更写回缓存（单事务：删除 / 新增 / 改名，目录改名按前缀重写子树）
+    /// renames: (旧路径, 新路径, 是否目录, 新文件名, 新扩展名)
+    pub fn apply_batch(
+        &self,
+        deleted: &[String],
+        created: &[FileEntry],
+        renames: &[(String, String, bool, String, Box<str>)],
+    ) -> Result<(), String> {
+        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        {
+            let mut del = tx
+                .prepare("DELETE FROM file_index WHERE path = ?1")
+                .map_err(|e| e.to_string())?;
+            for path in deleted {
+                del.execute(params![path]).map_err(|e| e.to_string())?;
+            }
+
+            let mut ins = tx.prepare(
+                "INSERT INTO file_index (name, path, extension, size, modified, is_dir)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )
+            .map_err(|e| e.to_string())?;
+            for e in created {
+                ins.execute(params![
+                    e.name.as_ref(),
+                    e.path.as_ref(),
+                    e.extension.as_ref(),
+                    e.size,
+                    e.modified,
+                    e.is_dir as i32,
+                ])
+                .map_err(|e| e.to_string())?;
+            }
+
+            for (old, new, is_dir, new_name, new_ext) in renames {
+                if *is_dir {
+                    // 目录改名：子树前缀重写——`old\X` → `new\X`
+                    // 关键点：
+                    // 1) 用范围查询（`old\` ~ `old\` + 最大码点）而不是 substr() 前缀比较，
+                    //    这样能命中 idx_path 索引，避免每次全表扫描 27 万行；
+                    // 2) 上界必须用 U+10FFFF 而不是 `]`：SQLite 文本默认按 UTF-8 字节比较，
+                    //    中文首字节 ≥ 0xE4 远大于 ']'(0x5D)，用 `]` 会把中文子目录整批漏掉；
+                    // 3) 分隔符必须用参数 ?3 传单个反斜杠：SQLite 的字符串字面量不识别反斜杠转义，
+                    //    写成 '\\' 实际是两个反斜杠，会把路径改成 `C:\new\\child`；
+                    // 4) 截断位置用 SQL 的 length(?2)（按字符计），不能用 Rust 的 old.len()（按字节），
+                    //    否则中文目录名会被多截掉几个字符。
+                    tx.execute(
+                        "UPDATE file_index
+                         SET path = ?1 || ?3 || substr(path, length(?2) + 2)
+                         WHERE path >= ?2 || ?3 AND path < ?2 || char(0x10FFFF)",
+                        params![new, old, "\\"],
+                    )
+                    .map_err(|e| e.to_string())?;
+                    // 目录本身
+                    tx.execute(
+                        "UPDATE file_index SET path = ?1, name = ?2, extension = '' WHERE path = ?3",
+                        params![new, new_name, old],
+                    )
+                    .map_err(|e| e.to_string())?;
+                } else {
+                    tx.execute(
+                        "UPDATE file_index SET path = ?1, name = ?2, extension = ?3 WHERE path = ?4",
+                        params![new, new_name, new_ext.as_ref(), old],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(())
     }
 }
 

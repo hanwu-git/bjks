@@ -111,17 +111,14 @@ pub fn load_or_scan(current_drives: &[String], expiry_hours: u64) -> (Vec<FileEn
     ));
 
     // 优先加载缓存（即使过期也加载，保证窗口快速显示）
-    let loaded = load_cache_with_meta(&cache_path);
-    let entries = loaded
-        .as_ref()
-        .map(|(e, _)| e.clone())
-        .unwrap_or_default();
+    // 直接 move 出条目：旧写法对 27 万条索引再 clone 一份，两份同时存活到函数结束，
+    // 白白多占约 50MB 峰值内存（字符串字段递归复制）。
+    let (entries, cached) = match load_cache_with_meta(&cache_path) {
+        Some((entries, meta)) => (entries, meta.unwrap_or_default()),
+        None => (Vec::new(), String::new()),
+    };
 
     if cache_valid && !entries.is_empty() {
-        let cached = loaded
-            .as_ref()
-            .and_then(|(_, meta)| meta.clone())
-            .unwrap_or_default();
         let cached_drives = normalize_drive_list(&cached);
         let current = normalize_drive_list(&current_drives.join(","));
 

@@ -111,9 +111,21 @@ pub struct MftRecord {
     pub reason: u32,
 }
 
-/// 单个卷的增量更新状态：FRN → 完整路径 平表 + USN 游标
+/// 目录节点：只记父 FRN 与自身名，不存完整路径。
+///
+/// 关键设计：USN 记录本身就带 (parent_frn, name)，所以只要知道每个目录挂在谁下面，
+/// 任何路径都能现场拼出。因此全卷 71.8 万条记录里只需保存约 10 万条目录，
+/// 文件条目完全不进表——沿用「全量平表」会额外吃 120MB+。
+/// 附带好处：目录改名只需改它自己的 name，子目录路径自动跟随（旧实现要靠前缀重写，易漏）。
+#[derive(Clone, Debug)]
+pub struct DirNode {
+    pub parent_frn: u64,
+    pub name: Box<str>,
+}
+
+/// 单个卷的增量更新状态：目录树 + USN 游标
 pub struct VolUsnState {
-    pub frn_paths: HashMap<u64, Box<str>>,
+    pub dirs: HashMap<u64, DirNode>,
     pub journal_id: u64,
     pub next_usn: u64,
 }
@@ -121,52 +133,74 @@ pub struct VolUsnState {
 /// 卷根目录固定文件记录号（NTFS $Root）
 const ROOT_FRN: u64 = 5;
 
-/// 把 FRN 树解析成完整路径平表（输入记录顺序无关，循环回溯到卷根）
-fn build_paths(records: &[MftRecord], root_prefix: &str) -> HashMap<u64, Box<str>> {
-    let by_frn: HashMap<u64, &MftRecord> =
-        records.iter().map(|r| (r.frn, r)).collect();
+/// NTFS 文件引用号 = 高 16 位序列号 + 低 48 位记录号。
+/// 真实枚举里的根记录是 `0x0005_0000_0000_0005`（序列 5 + 记录 5），
+/// 只比较裸 `5` 会让父链在根处断裂（整个路径都拼不出来）。
+const FRN_INDEX_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
 
-    let mut paths: HashMap<u64, Box<str>> = HashMap::with_capacity(records.len());
-    for rec in records {
-        // 逐级向上拼路径（已解析的父级直接复用，避免重复回溯）
-        let mut chain: Vec<&MftRecord> = Vec::new();
-        let mut cur = rec;
-        loop {
-            // 已解析过的祖先直接复用；卷根（FRN=5）为终点，其自身不参与路径拼接
-            if cur.frn == ROOT_FRN || paths.contains_key(&cur.frn) {
-                break;
-            }
-            // 环路检测：真实 MFT 中根记录父指针指向自身，异常数据也可能成环，
-            // 无此保护会无限回溯并把内存吃光
-            if chain.iter().any(|n| n.frn == cur.frn) {
-                break;
-            }
-            chain.push(cur);
-            match by_frn.get(&cur.parent_frn) {
-                Some(parent) => cur = parent,
-                None => break, // 父记录不在本卷（理论不可达）
-            }
+/// 是否为卷根（忽略序列号）
+fn is_root_frn(frn: u64) -> bool {
+    frn & FRN_INDEX_MASK == ROOT_FRN
+}
+
+/// 由记录集合建目录树（只保留目录，卷根自身不入表）
+fn build_dirs(records: Vec<MftRecord>) -> HashMap<u64, DirNode> {
+    records
+        .into_iter()
+        .filter(|r| r.is_dir && !is_root_frn(r.frn))
+        .map(|r| {
+            (
+                r.frn,
+                DirNode {
+                    parent_frn: r.parent_frn,
+                    name: r.name.into_boxed_str(),
+                },
+            )
+        })
+        .collect()
+}
+
+/// 拼上级路径与名字（上级路径若已带尾随分隔符则不再补）
+fn join_path(dir: &str, name: &str) -> String {
+    if dir.ends_with('\\') {
+        format!("{}{}", dir, name)
+    } else {
+        format!("{}\\{}", dir, name)
+    }
+}
+
+/// 从目录树向上回溯，拼出目录完整路径。
+/// 卷根返回 `C:\`（带尾随分隔符），其余目录不带尾随分隔符。
+/// 返回 None：父链断裂或异常成环（无此保护会把内存吃光 / 死循环）。
+fn dir_path(dirs: &HashMap<u64, DirNode>, frn: u64, root: &str) -> Option<String> {
+    if is_root_frn(frn) {
+        return Some(root.to_string());
+    }
+    let mut names: Vec<&str> = Vec::new();
+    let mut seen: HashSet<u64> = HashSet::new();
+    let mut cur = frn;
+    loop {
+        if is_root_frn(cur) {
+            break;
         }
-        // 从最顶层向下写路径
-        let mut base = if chain.is_empty() {
-            paths.get(&rec.frn).map(|p| p.to_string())
-        } else {
-            match paths.get(&chain.last().unwrap().parent_frn) {
-                Some(p) => Some(p.to_string()),
-                None => Some(root_prefix.to_string()), // 顶层直接挂在卷根下
-            }
-        };
-        while let Some(node) = chain.pop() {
-            let full = match base.take() {
-                Some(dir) if dir.ends_with('\\') => format!("{}{}", dir, node.name),
-                Some(dir) => format!("{}\\{}", dir, node.name),
-                None => format!("{}{}", root_prefix, node.name),
-            };
-            paths.insert(node.frn, full.into_boxed_str());
-            base = paths.get(&node.frn).map(|p| p.to_string());
+        if !seen.insert(cur) {
+            return None; // 成环
+        }
+        let node = dirs.get(&cur)?; // 父链断裂
+        names.push(&node.name);
+        cur = node.parent_frn;
+        if names.len() > 256 {
+            return None; // 深度异常
         }
     }
-    paths
+    let mut out = String::with_capacity(root.len() + names.iter().map(|n| n.len() + 1).sum::<usize>());
+    out.push_str(root);
+    for name in names.iter().rev() {
+        out.push_str(name);
+        out.push('\\');
+    }
+    out.pop(); // 去掉末尾分隔符，与历史平表格式一致（根是唯一例外）
+    Some(out)
 }
 
 /// 打开卷句柄（\\.\C: 形式，需要管理权限查询 USN；失败返回 None 并记日志）
@@ -238,7 +272,9 @@ pub fn enum_mft(drive: &str) -> Option<VolUsnState> {
     let (journal_id, next_usn) = query_journal(drive)?;
     let handle = open_volume(drive)?;
 
-    let mut records: Vec<MftRecord> = Vec::new();
+    // 边枚举边丢弃文件记录：只保留目录，临时内存从 ~70MB 降到 ~10MB
+    let mut dir_records: Vec<MftRecord> = Vec::new();
+    let mut total_records: usize = 0;
     unsafe {
         let mut med = MftEnumDataV0 {
             start_file_reference_number: 0,
@@ -275,23 +311,28 @@ pub fn enum_mft(drive: &str) -> Option<VolUsnState> {
                 break;
             }
             // 输出前 8 字节是续枚举的 start_file_reference_number，其后为记录流
-            records.extend(parse_records(&buf, 8, returned as usize));
+            let parsed = parse_records(&buf, 8, returned as usize);
+            total_records += parsed.len();
+            dir_records.extend(
+                parsed
+                    .into_iter()
+                    .filter(|r| r.is_dir && !is_root_frn(r.frn)),
+            );
             med.start_file_reference_number =
                 u64::from_ne_bytes(buf[0..8].try_into().unwrap());
         }
         CloseHandle(handle);
     }
 
-    let root = format!("{}\\", drive.trim_end_matches('\\'));
-    let frn_paths = build_paths(&records, &root);
+    let dirs = build_dirs(dir_records);
     app_log(&format!(
-        "卷 {} MFT 枚举完成：{} 条记录，路径解析 {} 条",
+        "卷 {} MFT 枚举完成：总记录 {} 条，目录树 {} 条",
         drive,
-        records.len(),
-        frn_paths.len()
+        total_records,
+        dirs.len()
     ));
     Some(VolUsnState {
-        frn_paths,
+        dirs,
         journal_id,
         next_usn,
     })
@@ -401,62 +442,97 @@ pub fn coalesce(drive: &str, records: &[MftRecord], state: &mut VolUsnState) -> 
     let mut seen_created: HashSet<u64> = HashSet::new();
     // 本批内已配对改名的 FRN：其后的重复 NEW_NAME 记录（如 CLOSE 事件）不应再当新增
     let mut renamed_frn: HashSet<u64> = HashSet::new();
+    // 批内父目录路径缓存；目录树一旦变动（建/改名/删）立即清空，避免用到过期路径
+    let mut path_cache: HashMap<u64, Box<str>> = HashMap::new();
 
     for rec in records {
         let reason = rec.reason;
         if reason & USN_REASON_RENAME_OLD_NAME != 0 {
-            // 旧名：优先用平表里的现成路径，其次拼 parent
-            let old_path = state
-                .frn_paths
-                .get(&rec.frn)
-                .map(|p| p.to_string())
-                .unwrap_or_default();
+            // 旧路径 = 旧父目录路径 + 旧名，两项都由本条记录自带，无需查历史
+            let old_path =
+                resolve_path(&state.dirs, &mut path_cache, rec.parent_frn, &rec.name, &root)
+                    .unwrap_or_default();
             pending_old.insert(rec.frn, old_path);
         }
         if reason & USN_REASON_RENAME_NEW_NAME != 0 {
-            let new_path = format!("{}{}", root, rec.name); // 临时，稍后按 parent 修正
             let old_path = pending_old.remove(&rec.frn);
             match old_path {
                 Some(old) => {
-                    // 改名/移动：更新平表路径
-                    let real_new = resolve_path(state, rec, &root, &new_path);
-                    if let Some(rp) = real_new {
+                    // 改名/移动：目录只更新自身的父与名，子目录路径自动跟随
+                    if let Some(new_path) =
+                        resolve_path(&state.dirs, &mut path_cache, rec.parent_frn, &rec.name, &root)
+                    {
                         if !old.is_empty() {
-                            batch.renamed.push((old, rp.clone(), rec.is_dir));
+                            batch.renamed.push((old, new_path, rec.is_dir));
                         }
-                        state.frn_paths.insert(rec.frn, rp.into_boxed_str());
+                        if rec.is_dir {
+                            state.dirs.insert(
+                                rec.frn,
+                                DirNode {
+                                    parent_frn: rec.parent_frn,
+                                    name: rec.name.as_str().into(),
+                                },
+                            );
+                            path_cache.clear();
+                        }
                         renamed_frn.insert(rec.frn);
                     }
                 }
                 None => {
                     // 无 OLD 的 NEW_NAME：从其他卷移入视为新增；本批已改过名的忽略
                     if !renamed_frn.contains(&rec.frn) {
-                        let real_new = resolve_path(state, rec, &root, &new_path);
-                        if let Some(rp) = real_new {
+                        if let Some(new_path) = resolve_path(
+                            &state.dirs,
+                            &mut path_cache,
+                            rec.parent_frn,
+                            &rec.name,
+                            &root,
+                        ) {
+                            if rec.is_dir {
+                                state.dirs.insert(
+                                    rec.frn,
+                                    DirNode {
+                                        parent_frn: rec.parent_frn,
+                                        name: rec.name.as_str().into(),
+                                    },
+                                );
+                                path_cache.clear();
+                            }
                             if seen_created.insert(rec.frn) {
-                                batch.created.push((rec.frn, rp, rec.is_dir));
+                                batch.created.push((rec.frn, new_path, rec.is_dir));
                             }
                         }
                     }
                 }
             }
         } else if reason & USN_REASON_FILE_CREATE != 0 {
-            if let Some(rp) = resolve_path(state, rec, &root, "") {
-                // 新条目也要写入平表，否则它随后的改名/删除无法还原旧路径
-                state.frn_paths.insert(rec.frn, rp.as_str().into());
+            if let Some(new_path) =
+                resolve_path(&state.dirs, &mut path_cache, rec.parent_frn, &rec.name, &root)
+            {
+                // 新建目录要进目录树，否则它下面的条目无法解析路径
+                if rec.is_dir {
+                    state.dirs.insert(
+                        rec.frn,
+                        DirNode {
+                            parent_frn: rec.parent_frn,
+                            name: rec.name.as_str().into(),
+                        },
+                    );
+                    path_cache.clear();
+                }
                 if seen_created.insert(rec.frn) {
-                    batch.created.push((rec.frn, rp, rec.is_dir));
+                    batch.created.push((rec.frn, new_path, rec.is_dir));
                 }
             }
         } else if reason & USN_REASON_FILE_DELETE != 0 {
-            // 删除：优先平表路径，其次拼旧名
-            let path = state
-                .frn_paths
-                .get(&rec.frn)
-                .map(|p| p.to_string())
+            // 删除：路径同样由本条记录的 (parent_frn, name) 现场拼出
+            let path = resolve_path(&state.dirs, &mut path_cache, rec.parent_frn, &rec.name, &root)
                 .unwrap_or_else(|| format!("{}{}", root, rec.name));
             batch.deleted.push(path);
-            state.frn_paths.remove(&rec.frn);
+            if rec.is_dir {
+                state.dirs.remove(&rec.frn);
+                path_cache.clear();
+            }
         }
     }
 
@@ -465,33 +541,31 @@ pub fn coalesce(drive: &str, records: &[MftRecord], state: &mut VolUsnState) -> 
         if !old_path.is_empty() {
             batch.deleted.push(old_path);
         }
-        state.frn_paths.remove(&frn);
+        state.dirs.remove(&frn);
     }
     batch
 }
 
-/// 用平表把 (parent_frn, name) 解析为完整路径；parent 尚未知时返回 None（跳过，下轮全扫兜底）
+/// 用目录树把 (parent_frn, name) 拼成完整路径；父链断裂时返回 None（跳过，下轮全扫兜底）
 fn resolve_path(
-    state: &VolUsnState,
-    rec: &MftRecord,
+    dirs: &HashMap<u64, DirNode>,
+    cache: &mut HashMap<u64, Box<str>>,
+    parent_frn: u64,
+    name: &str,
     root: &str,
-    fallback: &str,
 ) -> Option<String> {
-    // 父目录在平表中 → 直接拼
-    if let Some(parent_path) = state.frn_paths.get(&rec.parent_frn) {
-        let pp = parent_path.to_string();
-        return Some(if pp.ends_with('\\') {
-            format!("{}{}", pp, rec.name)
-        } else {
-            format!("{}\\{}", pp, rec.name)
-        });
+    if is_root_frn(parent_frn) {
+        return Some(join_path(root, name));
     }
-    // 顶层（父是卷根 FRN=5，根不在平表）
-    if rec.parent_frn == 5 {
-        return Some(format!("{}{}", root, rec.name));
-    }
-    let _ = fallback;
-    None
+    let parent_path = match cache.get(&parent_frn) {
+        Some(p) => p.to_string(),
+        None => {
+            let p = dir_path(dirs, parent_frn, root)?;
+            cache.insert(parent_frn, p.as_str().into());
+            p
+        }
+    };
+    Some(join_path(&parent_path, name))
 }
 
 #[cfg(test)]
@@ -526,13 +600,20 @@ mod tests {
         b
     }
 
-    fn new_state(paths: Vec<(u64, &str)>) -> VolUsnState {
-        let mut frn_paths: HashMap<u64, Box<str>> = HashMap::new();
-        for (frn, p) in paths {
-            frn_paths.insert(frn, p.into());
+    /// 构造目录树状态：(FRN, 父 FRN, 目录名)，与 enumerate MFT 后的内存结构一致
+    fn new_state(dirs: Vec<(u64, u64, &str)>) -> VolUsnState {
+        let mut map: HashMap<u64, DirNode> = HashMap::new();
+        for (frn, parent_frn, name) in dirs {
+            map.insert(
+                frn,
+                DirNode {
+                    parent_frn,
+                    name: name.into(),
+                },
+            );
         }
         VolUsnState {
-            frn_paths,
+            dirs: map,
             journal_id: 1,
             next_usn: 0,
         }
@@ -566,28 +647,33 @@ mod tests {
 
     #[test]
     fn test_coalesce_create() {
-        let mut state = new_state(vec![(5, "C:\\"), (42, "C:\\Users\\hanwu\\Documents")]);
+        let mut state = new_state(vec![
+            (10, 5, "Users"),
+            (11, 10, "hanwu"),
+            (42, 11, "Documents"),
+        ]);
         let rec = build_record(99, 42, USN_REASON_FILE_CREATE, "新建.txt", false);
         let recs = parse_records(&rec, 0, rec.len());
         let batch = coalesce("C:", &recs, &mut state);
         assert_eq!(batch.created.len(), 1, "CREATE 应产生一条新增");
         assert_eq!(batch.created[0].1, "C:\\Users\\hanwu\\Documents\\新建.txt");
+        assert!(!state.dirs.contains_key(&99), "普通文件不进目录树（省内存的关键）");
     }
 
     #[test]
     fn test_coalesce_delete() {
-        let mut state = new_state(vec![(5, "C:\\"), (42, "C:\\Docs"), (99, "C:\\Docs\\旧.txt")]);
+        let mut state = new_state(vec![(42, 5, "Docs")]);
         let rec = build_record(99, 42, USN_REASON_FILE_DELETE, "旧.txt", false);
         let recs = parse_records(&rec, 0, rec.len());
         let batch = coalesce("C:", &recs, &mut state);
         assert_eq!(batch.deleted.len(), 1, "DELETE 应产生一条删除");
         assert_eq!(batch.deleted[0], "C:\\Docs\\旧.txt");
-        assert!(!state.frn_paths.contains_key(&99), "删除后应移除平表条目");
+        assert!(state.dirs.contains_key(&42), "删除文件不应影响目录树");
     }
 
     #[test]
     fn test_coalesce_rename_pair() {
-        let mut state = new_state(vec![(5, "C:\\"), (42, "C:\\Docs"), (99, "C:\\Docs\\旧名.txt")]);
+        let mut state = new_state(vec![(42, 5, "Docs")]);
         let old = build_record(99, 42, USN_REASON_RENAME_OLD_NAME, "旧名.txt", false);
         let new = build_record(99, 42, USN_REASON_RENAME_NEW_NAME, "新名.txt", false);
         let mut buf = old.clone();
@@ -601,7 +687,7 @@ mod tests {
 
     #[test]
     fn test_coalesce_rename_old_only_is_delete() {
-        let mut state = new_state(vec![(5, "C:\\"), (42, "C:\\Docs"), (99, "C:\\Docs\\x.txt")]);
+        let mut state = new_state(vec![(42, 5, "Docs")]);
         let old = build_record(99, 42, USN_REASON_RENAME_OLD_NAME, "x.txt", false);
         let recs = parse_records(&old, 0, old.len());
         let batch = coalesce("C:", &recs, &mut state);
@@ -612,7 +698,7 @@ mod tests {
     #[test]
     fn test_coalesce_create_dedup() {
         // 一次写入会产生多条 CREATE 记录（写盘 + 关闭），同一 FRN 只能算一次新增
-        let mut state = new_state(vec![(5, "C:\\"), (42, "C:\\Docs")]);
+        let mut state = new_state(vec![(42, 5, "Docs")]);
         let mut buf = Vec::new();
         for _ in 0..3 {
             buf.extend(build_record(99, 42, USN_REASON_FILE_CREATE, "同文件.txt", false));
@@ -623,14 +709,49 @@ mod tests {
     }
 
     #[test]
-    fn test_build_paths_tree() {
+    fn test_dir_tree_path() {
+        // 真实枚举里的根记录 FRN 带序列号（0x0005_0000_0000_0005），不能只认裸 5
+        const ROOT_SERIAL: u64 = 0x0005_0000_0000_0005;
         let records = vec![
-            MftRecord { frn: 5, parent_frn: 5, name: ".".into(), is_dir: true, reason: 0 },
-            MftRecord { frn: 10, parent_frn: 5, name: "Users".into(), is_dir: true, reason: 0 },
+            MftRecord { frn: ROOT_SERIAL, parent_frn: ROOT_SERIAL, name: ".".into(), is_dir: true, reason: 0 },
+            MftRecord { frn: 10, parent_frn: ROOT_SERIAL, name: "Users".into(), is_dir: true, reason: 0 },
             MftRecord { frn: 11, parent_frn: 10, name: "hanwu".into(), is_dir: true, reason: 0 },
             MftRecord { frn: 12, parent_frn: 11, name: "a.txt".into(), is_dir: false, reason: 0 },
         ];
-        let paths = build_paths(&records, "C:\\");
-        assert_eq!(paths.get(&12).map(|p| p.as_ref()), Some("C:\\Users\\hanwu\\a.txt"));
+        let dirs = build_dirs(records);
+        assert_eq!(dirs.len(), 2, "只有目录进树，卷根与文件都丢弃");
+        assert_eq!(dir_path(&dirs, 11, "C:\\").as_deref(), Some("C:\\Users\\hanwu"));
+        let mut cache = HashMap::new();
+        assert_eq!(
+            resolve_path(&dirs, &mut cache, 11, "a.txt", "C:\\").as_deref(),
+            Some("C:\\Users\\hanwu\\a.txt")
+        );
+        // 挂直接卷根下的条目也必须拼对（旧实现会在根处断裂）
+        assert_eq!(
+            resolve_path(&dirs, &mut cache, ROOT_SERIAL, "根下文件.txt", "C:\\").as_deref(),
+            Some("C:\\根下文件.txt")
+        );
     }
+
+    #[test]
+    fn test_dir_rename_children_follow() {
+        // 目录改名后，子目录只记父 FRN，路径应自动跟随（旧实现需要前缀重写，易漏）
+        let mut state = new_state(vec![(10, 5, "Old"), (11, 10, "Child")]);
+        let old = build_record(10, 5, USN_REASON_RENAME_OLD_NAME, "Old", true);
+        let new = build_record(10, 5, USN_REASON_RENAME_NEW_NAME, "New", true);
+        let mut buf = old.clone();
+        buf.extend(new);
+        let recs = parse_records(&buf, 0, buf.len());
+        let batch = coalesce("C:", &recs, &mut state);
+        assert_eq!(batch.renamed.len(), 1);
+        assert_eq!(batch.renamed[0].0, "C:\\Old");
+        assert_eq!(batch.renamed[0].1, "C:\\New");
+
+        // 改名之后，子目录下的文件路径必须走新名字
+        let rec = build_record(99, 11, USN_REASON_FILE_CREATE, "x.txt", false);
+        let recs = parse_records(&rec, 0, rec.len());
+        let batch = coalesce("C:", &recs, &mut state);
+        assert_eq!(batch.created[0].1, "C:\\New\\Child\\x.txt");
+    }
+
 }

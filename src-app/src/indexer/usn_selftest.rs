@@ -72,9 +72,9 @@ pub fn run(drive: &str) -> i32 {
             return 2;
         }
     };
-    log(&format!("✓ MFT 枚举完成，路径平表 {} 条", state.frn_paths.len()));
-    for p in state.frn_paths.values().take(3) {
-        log(&format!("  样例路径 {}", p));
+    log(&format!("✓ MFT 枚举完成，目录树 {} 条", state.dirs.len()));
+    for (frn, node) in state.dirs.iter().take(3) {
+        log(&format!("  样例目录 FRN={} 父={} 名={}", frn, node.parent_frn, node.name));
     }
 
     let dir = app_data_dir();

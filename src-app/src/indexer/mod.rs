@@ -19,7 +19,7 @@ pub struct VolumeInfo {
 }
 
 /// 配置为空时默认参与索引的盘符
-const DEFAULT_SCAN_DRIVES: [&str; 2] = ["C:", "D:"];
+pub const DEFAULT_SCAN_DRIVES: [&str; 2] = ["C:", "D:"];
 
 /// 判断盘符根目录是否可访问
 fn is_ready(root: &str) -> bool {

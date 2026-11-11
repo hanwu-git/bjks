@@ -819,13 +819,12 @@ impl BjksApp {
                             row.col(|ui| {
                                 let t = egui::RichText::new(entry.name.as_ref());
                                 let t = if is_selected { t.strong() } else { t };
-                                let mut resp = ui.add(
+                                // Label 被截断时已自动弹出完整文本，勿再手动加，
+                                // 否则同一位置会叠出两个相同的提示框
+                                let resp = ui.add(
                                     egui::Label::new(t)
                                         .wrap_mode(egui::TextWrapMode::Truncate),
                                 );
-                                if resp.hovered() {
-                                    resp = resp.on_hover_text(entry.name.as_ref());
-                                }
                                 row_interaction(
                                     &resp,
                                     entry,
@@ -842,9 +841,11 @@ impl BjksApp {
                                     .map(|(p, _)| p)
                                     .unwrap_or(entry.path.as_ref());
                                 let t = egui::RichText::new(parent).color(c.text_sec);
+                                // 关掉 Label 自带的省略提示，改为只显示一次完整路径（含文件名）
                                 let mut resp = ui.add(
                                     egui::Label::new(t)
-                                        .wrap_mode(egui::TextWrapMode::Truncate),
+                                        .wrap_mode(egui::TextWrapMode::Truncate)
+                                        .show_tooltip_when_elided(false),
                                 );
                                 if resp.hovered() {
                                     resp = resp.on_hover_text(entry.path.as_ref());

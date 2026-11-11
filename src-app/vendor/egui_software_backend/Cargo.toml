@@ -1,6 +1,8 @@
 # 本文件为 vendored 副本（上游 egui_software_backend 0.0.3，MIT OR Apache-2.0）
 # 精简：移除 examples/tests/dev-dependencies/test_render feature；
 # 本地补丁见 src/winit.rs 中 on_close_requested（支持关闭拦截→最小化到托盘）。
+# 另：egui-winit 必须显式开启 clipboard 特性，否则选中文本/右键菜单的复制与 Ctrl+V 粘贴
+# 全都到不了系统剪贴板（该特性默认属于 default-features，而这里用了 default-features = false）。
 [package]
 name = "egui_software_backend"
 version = "0.0.3"
@@ -24,7 +26,9 @@ path = "src/lib.rs"
 bytemuck = { version = "1.25", optional = true }
 constify = "0.0.1"
 egui = { version = "0.34", default-features = false }
-egui-winit = { version = "0.34", optional = true, default-features = false }
+egui-winit = { version = "0.34", optional = true, default-features = false, features = [
+    "clipboard",
+] }
 log = { version = "0.4", optional = true }
 rayon = { version = "1.11.0", optional = true }
 softbuffer = { version = "0.4", optional = true }

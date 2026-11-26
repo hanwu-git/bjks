@@ -75,4 +75,56 @@ impl BjksApp {
             });
         self.show_readme = open;
     }
+
+    /// 更新提示弹窗：仅当后台探测到新版本且未被忽略时出现
+    pub fn update_window(&mut self, ctx: &egui::Context) {
+        if self.update_dismissed {
+            return;
+        }
+        let Some(info) = self.update_available.lock().unwrap().clone() else {
+            return;
+        };
+        let c = theme::theme_colors(self.theme_id);
+        egui::Window::new(RichText::new("发现新版本").strong())
+            .resizable(false)
+            .collapsible(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.viewport_rect().center())
+            .show(ctx, |ui| {
+                ui.label(format!("最新版本：v{}", info.version));
+                ui.label(
+                    RichText::new(format!("当前版本：v{}", env!("CARGO_PKG_VERSION")))
+                        .color(c.text_sec),
+                );
+                if let Some(notes) = &info.notes {
+                    if !notes.is_empty() {
+                        ui.separator();
+                        egui::ScrollArea::vertical()
+                            .max_height(140.0)
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                ui.add(egui::Label::new(RichText::new(notes).size(12.0)).wrap());
+                            });
+                    }
+                }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("打开下载页").color(c.primary_text),
+                            )
+                            .fill(c.primary),
+                        )
+                        .clicked()
+                    {
+                        crate::update::open_in_browser(&info.url);
+                        self.update_dismissed = true;
+                    }
+                    if ui.button("忽略").clicked() {
+                        self.update_dismissed = true;
+                    }
+                });
+            });
+    }
 }

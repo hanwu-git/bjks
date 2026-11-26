@@ -125,6 +125,10 @@ pub struct BjksApp {
     pub _tray: Option<tray_icon::TrayIcon>,
     pub tray_msgs: Arc<Mutex<Vec<TrayMsg>>>,
 
+    // 更新检查（后台线程延迟 10 秒探测 GitHub，静默失败；Some 才弹提示）
+    pub update_available: Arc<Mutex<Option<crate::update::UpdateInfo>>>,
+    pub update_dismissed: bool,
+
     // 窗口尺寸节流写回（points）
     pending_size: Option<(f32, f32, Instant)>,
 }
@@ -200,6 +204,8 @@ impl BjksApp {
             exclude_input_extension: String::new(),
             _tray: tray,
             tray_msgs,
+            update_available: crate::update::start_delayed_check(ctx.clone()),
+            update_dismissed: false,
             pending_size: None,
         }
     }
@@ -1218,6 +1224,7 @@ impl egui_software_backend::App for BjksApp {
         self.settings_window(&ctx);
         self.about_window(&ctx);
         self.readme_window(&ctx);
+        self.update_window(&ctx);
     }
 
     fn on_close_requested(&mut self, ctx: &egui::Context) -> bool {

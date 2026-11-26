@@ -8,6 +8,7 @@ mod search;
 mod service;
 mod sysicon;
 mod ui;
+mod update;
 
 use config::settings::load_config;
 pub use egui;

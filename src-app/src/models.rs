@@ -31,6 +31,8 @@ pub struct AppConfig {
     pub cache_expiry_hours: u32,
     #[serde(default = "default_auto_update_minutes")] // 运行中自动更新间隔（分钟，0=关闭）：USN 增量检查周期
     pub auto_update_minutes: u32,
+    #[serde(default)]                       // 已忽略更新提示的版本号（如 "3.6.0"，空=不忽略）：同版本号不再弹提示
+    pub ignored_update: String,
 }
 
 /// 索引缓存有效期默认 24 小时，兼容旧配置文件缺字段的情况
@@ -82,6 +84,7 @@ impl Default for AppConfig {
             theme: default_theme(),
             cache_expiry_hours: default_cache_expiry_hours(),
             auto_update_minutes: default_auto_update_minutes(),
+            ignored_update: String::new(),
         }
     }
 }

@@ -99,6 +99,8 @@ pub struct BjksApp {
     selected: Option<usize>,
     search_has_focus: bool,
     first_frame: bool,
+    /// 是否执行过搜索（区分「还没搜索」与「搜索无结果」两种空状态）
+    has_searched: bool,
 
     // 系统彩色图标纹理缓存（key：扩展名小写带点 / "__dir__"）
     icon_cache: std::collections::HashMap<String, egui::TextureHandle>,
@@ -128,6 +130,8 @@ pub struct BjksApp {
     // 更新检查（后台线程延迟 10 秒探测 GitHub，静默失败；Some 才弹提示）
     pub update_available: Arc<Mutex<Option<crate::update::UpdateInfo>>>,
     pub update_dismissed: bool,
+    /// 已忽略更新提示的版本号（持久化在配置里，同版本号重启后也不再提示）
+    pub ignored_update: String,
 
     // 窗口尺寸节流写回（points）
     pending_size: Option<(f32, f32, Instant)>,
@@ -187,6 +191,7 @@ impl BjksApp {
             selected: None,
             search_has_focus: false,
             first_frame: true,
+            has_searched: false,
             icon_cache: std::collections::HashMap::new(),
             show_settings: false,
             show_about: false,
@@ -206,6 +211,7 @@ impl BjksApp {
             tray_msgs,
             update_available: crate::update::start_delayed_check(ctx.clone()),
             update_dismissed: false,
+            ignored_update: config.ignored_update.clone(),
             pending_size: None,
         }
     }
@@ -246,6 +252,7 @@ impl BjksApp {
         self.results = response.results;
         self.total = response.total;
         self.query_time_ms = response.query_time_ms;
+        self.has_searched = true;
         self.selected = None;
         self.page_jump.clear();
         self.table_gen += 1; // 重置表格滚动位置
@@ -715,6 +722,39 @@ impl BjksApp {
             )
             .show_inside(ui_root, |ui| {
                 let id_salt = format!("results_table_{}", self.table_gen);
+
+                // 空状态：未搜索时显示引导语；搜索过但无结果时给出明确提示与建议
+                if self.results.is_empty() {
+                    let query = self.query.trim();
+                    ui.vertical_centered(|ui| {
+                        ui.add_space((ui.available_height() / 2.0 - 40.0).max(0.0));
+                        if !self.has_searched {
+                            ui.label(
+                                egui::RichText::new("🔍 在上方输入关键词，按回车开始搜索")
+                                    .size(15.0)
+                                    .color(c.text_sec),
+                            );
+                        } else {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "未找到与「{}」匹配的文件",
+                                    if query.is_empty() { "(空)" } else { query }
+                                ))
+                                .size(16.0)
+                                .strong(),
+                            );
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "建议：尝试更短的关键词；检查拼写；或放宽文件类型 / 目录范围筛选",
+                                )
+                                .size(13.0)
+                                .color(c.text_sec),
+                            );
+                        }
+                    });
+                    return;
+                }
 
                 // 借用拆分：表格渲染期间只读 results，行状态用局部变量收集
                 let page_offset = (self.current_page.saturating_sub(1)) * PAGE_SIZE;

@@ -89,6 +89,28 @@ mod tests {
     }
 
     #[test]
+    fn test_ignored_update_roundtrip() {
+        let _guard = CONFIG_TEST_LOCK.lock().unwrap();
+        let path = config_path_in(test_base());
+
+        // 写入带忽略版本号的配置
+        let mut config = AppConfig::default();
+        config.ignored_update = "3.6.0".to_string();
+        save_config_to(&path, &config).expect("保存配置失败");
+
+        // 重新加载后忽略版本号应保持一致
+        let loaded = load_config_from(&path);
+        assert_eq!(loaded.ignored_update, "3.6.0");
+
+        // 旧版配置文件（无该字段）加载时应回落为空
+        fs::write(&path, "{}").expect("写入旧版配置失败");
+        let legacy = load_config_from(&path);
+        assert_eq!(legacy.ignored_update, String::new());
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
     fn test_load_default_config() {
         let _guard = CONFIG_TEST_LOCK.lock().unwrap();
         let path = config_path_in(test_base());
